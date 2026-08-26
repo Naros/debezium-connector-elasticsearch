@@ -25,6 +25,51 @@ document identity and ordering, mapping generation, error classification, and mo
 until the connector documentation lands on the
 [Debezium site](https://debezium.io/documentation/).
 
+## Quick start
+
+Install the plugin from Maven Central
+([`io.debezium:debezium-connector-elasticsearch`](https://search.maven.org/search?q=g:io.debezium%20AND%20a:debezium-connector-elasticsearch))
+into your Kafka Connect `plugin.path` and register a connector:
+
+```json
+{
+  "name": "elasticsearch-sink",
+  "config": {
+    "connector.class": "io.debezium.connector.elasticsearch.ElasticsearchSinkConnector",
+    "topics": "inventory.customers",
+    "connection.url": "http://elasticsearch:9200",
+    "connection.auth.mode": "basic",
+    "connection.username": "elastic",
+    "connection.password": "elastic"
+  }
+}
+```
+
+By default each topic maps to an index of the same name, the index is created on first
+write with a mapping generated from the record schema, and the document `_id` is derived
+from the record key. A topic name that violates Elasticsearch index naming rules is a
+record-level error unless `resource.name.invalid.handling=sanitize` is configured. Naming,
+identity, write methods, deletes, truncates, and error handling are all configurable; see
+the design document above for the full property surface.
+
+## Building
+
+Requirements: JDK 17+, Docker (for integration tests).
+
+```bash
+./mvnw clean install
+```
+
+Build the connector plugin archive:
+
+```bash
+./mvnw clean package -Passembly
+```
+
+## Testing
+
+TBD
+
 ## Contributing
 
 The Debezium community welcomes anyone who wants to help out in any way, whether that
