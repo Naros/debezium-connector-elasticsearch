@@ -74,9 +74,10 @@ public class MappingManager {
                 return;
             }
             try {
+                TypeMapping mapping = null;
                 if (config.mappingMode() != MappingMode.NONE) {
                     if (valueSchema != null) {
-                        applyTemplates(resource, valueSchema);
+                        mapping = applyTemplates(resource, valueSchema);
                     }
                     else if (schemalessReported.compareAndSet(false, true)) {
                         LOGGER.info("Mapping generation for resource '{}' skipped: the record value carries no schema, so "
@@ -86,6 +87,15 @@ public class MappingManager {
                 if (!client.indices().exists(e -> e.index(resource)).value()) {
                     client.indices().create(c -> c.index(resource));
                     LOGGER.info("Created index '{}'.", resource);
+                }
+                else if (mapping != null) {
+                    // Templates only shape indices created after them. An index that already
+                    // exists, whether from an earlier schema or created by someone else, receives
+                    // the generated fields directly: an added column is absorbed, and a type change
+                    // is rejected by Elasticsearch here, once, rather than per document (DDD-61 6.3).
+                    final TypeMapping generated = mapping;
+                    client.indices().putMapping(m -> m.index(resource).dynamic(generated.dynamic()).properties(generated.properties()));
+                    LOGGER.info("Applied the generated mapping to existing index '{}'.", resource);
                 }
                 ensuredSchemaHash.put(resource, schemaHash);
             }
@@ -111,7 +121,7 @@ public class MappingManager {
         ensuredSchemaHash.remove(resource);
     }
 
-    private void applyTemplates(String resource, Schema valueSchema) throws IOException {
+    private TypeMapping applyTemplates(String resource, Schema valueSchema) throws IOException {
         final String templateName = "debezium-" + connectorName + "-" + resource;
         final TypeMapping mapping = generator.generate(valueSchema);
 
@@ -121,7 +131,7 @@ public class MappingManager {
 
         final boolean indexTemplateExists = client.indices().existsIndexTemplate(e -> e.name(templateName)).value();
         if (config.mappingMode() == MappingMode.CREATE_IF_ABSENT && indexTemplateExists) {
-            return;
+            return mapping;
         }
 
         final List<String> composedOf = new ArrayList<>(config.mappingComposedOf());
@@ -137,6 +147,7 @@ public class MappingManager {
             return t;
         });
         LOGGER.info("Applied index template '{}' for resource '{}' (composed of {}).", templateName, resource, composedOf);
+        return mapping;
     }
 
     private IndexSettings indexSettings() {
