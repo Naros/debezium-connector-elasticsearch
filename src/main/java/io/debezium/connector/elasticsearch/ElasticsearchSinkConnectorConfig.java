@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 
 import io.debezium.config.ConfigDefinition;
 import io.debezium.config.Configuration;
+import io.debezium.config.ConfigurationNames;
 import io.debezium.config.ConnectorConfigValidationHelper;
 import io.debezium.config.EnumeratedValue;
 import io.debezium.config.Field;
@@ -2179,8 +2180,12 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
         return defaultValue;
     }
 
+    /**
+     * The Connect connector name, which scopes the templates this connector owns
+     * (DDD-61 6.3); the module name is the fallback outside a Connect runtime.
+     */
     public String getConnectorName() {
-        return Module.name();
+        return Strings.defaultIfBlank(config.getString(ConfigurationNames.CONNECTOR_NAME_PROPERTY), Module.name());
     }
 
     public List<String> connectionUrls() {
