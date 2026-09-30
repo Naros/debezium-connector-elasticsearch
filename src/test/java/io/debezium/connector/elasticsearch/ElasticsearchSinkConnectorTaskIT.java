@@ -8,9 +8,13 @@ package io.debezium.connector.elasticsearch;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
 
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
@@ -18,6 +22,7 @@ import org.apache.kafka.connect.sink.SinkRecord;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ArgumentsSource;
@@ -26,6 +31,7 @@ import io.debezium.connector.elasticsearch.ElasticsearchSinkTaskTestContext.Repo
 import io.debezium.connector.elasticsearch.junit.ElasticsearchTestCluster;
 import io.debezium.connector.elasticsearch.junit.jupiter.ElasticsearchExtension;
 import io.debezium.connector.elasticsearch.junit.jupiter.SinkRecordFactoryArgumentsProvider;
+import io.debezium.connector.elasticsearch.util.DebeziumSinkRecordFactory;
 import io.debezium.connector.elasticsearch.util.SinkRecordFactory;
 
 import co.elastic.clients.elasticsearch._types.mapping.DynamicMapping;
@@ -153,6 +159,38 @@ public class ElasticsearchSinkConnectorTaskIT {
         final ReportedRecord reported = context.reportedRecords().get(0);
         assertThat(reported.record()).isSameAs(rejected);
         assertThat(reported.error()).hasMessageContaining("strict_dynamic_mapping_exception");
+    }
+
+    @Test
+    void shouldExposeMetricsOverJmxForTheLifetimeOfTheTask() throws Exception {
+        // DDD-61 9.3: the sink's own counters and the resolved connection are reachable over JMX
+        // under the connector and task name from start() until stop().
+        final SinkRecordFactory factory = new DebeziumSinkRecordFactory();
+        final MBeanServer server = ManagementFactory.getPlatformMBeanServer();
+        final ObjectName name = new ObjectName("debezium.elasticsearch:type=connector-metrics,context=sink,server=smoke,task=0");
+        assertThat(server.isRegistered(name)).isFalse();
+
+        startTask(Map.of());
+        assertThat(server.isRegistered(name)).isTrue();
+
+        task.put(List.of(
+                factory.createRecord(TOPIC, 1, "alice", null, 0),
+                factory.deleteRecord(TOPIC, 2, 1)));
+        task.preCommit(Map.of(PARTITION, new OffsetAndMetadata(2)));
+
+        assertThat(server.getAttribute(name, "TotalNumberOfWrites")).isEqualTo(1L);
+        assertThat(server.getAttribute(name, "TotalNumberOfDeletes")).isEqualTo(1L);
+        assertThat(server.getAttribute(name, "TotalNumberOfBulkRequests")).isEqualTo(1L);
+        assertThat(server.getAttribute(name, "TotalNumberOfErrantRecords")).isEqualTo(0L);
+        assertThat(server.getAttribute(name, "DistinctResourceCount")).isEqualTo(1);
+        assertThat(server.getAttribute(name, "BlockedResourceCount")).isEqualTo(0);
+        assertThat((Long) server.getAttribute(name, "MillisSinceLastSuccessfulBulkResponse")).isNotNegative();
+        assertThat(server.getAttribute(name, "ClusterVersion")).isEqualTo(cluster.client().info().version().number());
+        assertThat((String) server.getAttribute(name, "ApiCompatibilityMode")).isNotEmpty();
+
+        task.stop();
+        task = null;
+        assertThat(server.isRegistered(name)).isFalse();
     }
 
     private void startTask(Map<String, String> overrides) {
