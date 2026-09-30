@@ -102,13 +102,17 @@ public class RecordAdapter {
     }
 
     private SinkOperation adaptPlain(DebeziumSinkRecord record) {
-        if (record.value() == null) {
+        // The shared binding materializes a null value as an empty struct (or fails without a
+        // schema), so tombstones are recognized before the value is touched.
+        if (record.isTombstone() || isNullValueWithSchema(record)) {
             return adaptTombstone(record);
         }
-        if (record.value() instanceof Struct) {
-            return SinkOperation.Write.of(record, null, record.getPayload());
+        final Object value = record.value();
+        if (value instanceof Struct struct) {
+            // Opaque body: the whole value, even one shaped like an envelope (DDD-61 2).
+            return SinkOperation.Write.of(record, null, struct);
         }
-        return SinkOperation.Write.ofRaw(record, record.value());
+        return SinkOperation.Write.ofRaw(record, value);
     }
 
     /**
