@@ -59,6 +59,7 @@ import io.debezium.data.geometry.Point;
 import io.debezium.data.vector.DoubleVector;
 import io.debezium.data.vector.FloatVector;
 import io.debezium.data.vector.SparseDoubleVector;
+import io.debezium.schema.SchemaNameAdjuster;
 import io.debezium.sink.DebeziumSinkRecord;
 import io.debezium.time.Conversions;
 import io.debezium.time.Date;
@@ -497,27 +498,9 @@ public class DocumentConverter {
         return switch (config.fieldNameAdjustmentMode()) {
             case NONE -> name;
             case ELASTICSEARCH -> name.replace(".", config.fieldNameSeparatorReplacement());
-            case AVRO -> avroAdjust(name, false);
-            case AVRO_UNICODE -> avroAdjust(name, true);
+            case AVRO -> SchemaNameAdjuster.AVRO_FIELD_NAMER.adjust(name);
+            case AVRO_UNICODE -> SchemaNameAdjuster.AVRO_UNICODE_FIELD_NAMER.adjust(name);
         };
-    }
-
-    private String avroAdjust(String name, boolean unicode) {
-        final StringBuilder result = new StringBuilder(name.length());
-        for (int i = 0; i < name.length(); i++) {
-            final char c = name.charAt(i);
-            final boolean valid = c == '_' || Character.isLetter(c) && c < 128 || Character.isDigit(c) && c < 128 && i > 0;
-            if (valid) {
-                result.append(c);
-            }
-            else if (unicode) {
-                result.append("_u").append(Integer.toHexString(c));
-            }
-            else {
-                result.append('_');
-            }
-        }
-        return result.toString();
     }
 
     private byte[] toBytes(Object value) {
