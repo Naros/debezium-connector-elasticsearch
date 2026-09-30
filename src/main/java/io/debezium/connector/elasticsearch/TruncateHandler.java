@@ -87,6 +87,9 @@ public class TruncateHandler {
         try {
             // conflicts=abort is deliberate: a concurrent write during the scan fails the truncate
             // loudly instead of applying to part of the index and reporting success.
+            // delete_by_query works from the search snapshot, so documents the drained bulk request
+            // just indexed are invisible to it until the index is refreshed (DDD-61 5.1).
+            client.indices().refresh(r -> r.index(resource));
             response = client.deleteByQuery(d -> d
                     .index(resource)
                     .query(q -> q.matchAll(m -> m))
