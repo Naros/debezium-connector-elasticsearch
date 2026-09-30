@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import org.apache.kafka.connect.errors.ConnectException;
 import org.junit.jupiter.api.AfterEach;
@@ -36,6 +37,7 @@ import io.debezium.sink.DebeziumSinkRecord;
 import io.debezium.sink.SinkConnectorConfig;
 import io.debezium.sink.batch.BatchRecord;
 import io.debezium.util.Clock;
+import io.debezium.util.DelayStrategy;
 
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 
@@ -54,7 +56,7 @@ public class ElasticsearchBulkWriterTest {
     private final DebeziumSinkRecordFactory factory = new DebeziumSinkRecordFactory();
     private final List<DebeziumSinkRecord> reported = new ArrayList<>();
     private final List<String> reportedMessages = new ArrayList<>();
-    private final List<Long> sleeps = new ArrayList<>();
+    private final List<Long> pauses = new ArrayList<>();
     private final long[] now = { 1_000_000L };
     private final Clock clock = () -> now[0];
 
@@ -66,7 +68,7 @@ public class ElasticsearchBulkWriterTest {
     void beforeEach() throws IOException {
         stub = new StubElasticsearch();
         metrics = new ElasticsearchSinkConnectorMetrics("test", "0");
-        handshake = new ClusterVersionHandshake(stub.restClient(), 0, 0, 0, sleeps::add);
+        handshake = new ClusterVersionHandshake(stub.restClient(), 0, DelayStrategy::none);
         handshake.ensureProbed();
         stub.clearRequests();
     }
@@ -89,7 +91,7 @@ public class ElasticsearchBulkWriterTest {
         assertThat(metrics.getTotalNumberOfBulkRequests()).isEqualTo(1);
         assertThat(metrics.getTotalNumberOfRetries()).isZero();
         assertThat(reported).isEmpty();
-        assertThat(sleeps).isEmpty();
+        assertThat(pauses).isEmpty();
     }
 
     @Test
@@ -119,7 +121,7 @@ public class ElasticsearchBulkWriterTest {
         assertThat(metrics.getTotalNumberOfThrottleEvents()).isEqualTo(1);
         // Backpressure is expressed through the halved batch (DDD-61 8), not a pause: a round
         // that made progress retries its rejected remainder immediately.
-        assertThat(sleeps).isEmpty();
+        assertThat(pauses).isEmpty();
         assertThat(reported).isEmpty();
     }
 
@@ -152,7 +154,7 @@ public class ElasticsearchBulkWriterTest {
 
         assertThat(stub.requests("POST", "/_bulk")).hasSize(3);
         assertThat(metrics.getTotalNumberOfRetries()).isEqualTo(3);
-        assertThat(sleeps).as("exponential backoff capped at retry.backoff.max.ms").containsExactly(100L, 150L);
+        assertThat(pauses).as("one backoff between each of the three attempts").hasSize(2);
     }
 
     @Test
@@ -340,13 +342,20 @@ public class ElasticsearchBulkWriterTest {
     }
 
     private ElasticsearchBulkWriter writer(Map<String, String> overrides, AdaptiveThrottle throttle) {
-        return new ElasticsearchBulkWriter(stub.client(), config(overrides), throttle, (record, error) -> {
+        final ElasticsearchSinkConnectorConfig config = config(overrides);
+        // The schedule itself belongs to DelayStrategy; here each pause advances the fake clock
+        // by the configured initial backoff so the stall timeout is reached deterministically.
+        final Supplier<DelayStrategy> backoffs = () -> criteria -> {
+            if (criteria) {
+                pauses.add(config.retryBackoffMs());
+                now[0] += config.retryBackoffMs();
+            }
+            return criteria;
+        };
+        return new ElasticsearchBulkWriter(stub.client(), config, throttle, (record, error) -> {
             reported.add(record);
             reportedMessages.add(error.getMessage());
-        }, metrics, handshake, clock, millis -> {
-            sleeps.add(millis);
-            now[0] += millis;
-        });
+        }, metrics, handshake, clock, backoffs);
     }
 
     private ElasticsearchSinkConnectorConfig config(Map<String, String> overrides) {
