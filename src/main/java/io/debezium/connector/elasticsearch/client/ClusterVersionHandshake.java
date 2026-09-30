@@ -18,6 +18,8 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.debezium.connector.elasticsearch.util.Sleeper;
+
 /**
  * The startup cluster-version handshake and its failure contract. No code path may turn a
  * missing probe result into a running task: an unsupported version fails naming the version and
@@ -48,13 +50,22 @@ public class ClusterVersionHandshake {
     private final int maxRetries;
     private final long retryBackoffMs;
     private final long retryBackoffMaxMs;
+    private final Sleeper sleeper;
     private final AtomicReference<ClusterVersion> probed = new AtomicReference<>();
 
     public ClusterVersionHandshake(RestClient restClient, int maxRetries, long retryBackoffMs, long retryBackoffMaxMs) {
+        this(restClient, maxRetries, retryBackoffMs, retryBackoffMaxMs, Sleeper.system());
+    }
+
+    /**
+     * The sleeper governs the pause between probe attempts; injectable for tests.
+     */
+    public ClusterVersionHandshake(RestClient restClient, int maxRetries, long retryBackoffMs, long retryBackoffMaxMs, Sleeper sleeper) {
         this.restClient = restClient;
         this.maxRetries = maxRetries;
         this.retryBackoffMs = retryBackoffMs;
         this.retryBackoffMaxMs = retryBackoffMaxMs;
+        this.sleeper = sleeper;
     }
 
     /**
@@ -95,7 +106,7 @@ public class ClusterVersionHandshake {
                     break;
                 }
                 try {
-                    Thread.sleep(backoff);
+                    sleeper.sleep(backoff);
                 }
                 catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
