@@ -5,32 +5,32 @@
  */
 package io.debezium.connector.elasticsearch.metrics;
 
-import java.lang.management.ManagementFactory;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-import javax.management.MBeanServer;
+import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import io.debezium.DebeziumException;
+import io.debezium.annotation.ThreadSafe;
+import io.debezium.pipeline.JmxUtils;
 import io.debezium.sink.spi.SinkProgressListener;
+import io.debezium.util.Sanitizer;
 
 /**
  * JMX-registered metrics implementation, also serving as the {@link SinkProgressListener}.
  *
  * @author Chris Cranford
  */
+@ThreadSafe
 public class ElasticsearchSinkConnectorMetrics implements ElasticsearchSinkConnectorMetricsMXBean, SinkProgressListener {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(ElasticsearchSinkConnectorMetrics.class);
+    private static final String JMX_OBJECT_NAME_FORMAT = "debezium.elasticsearch:type=connector-metrics,context=sink,server=%s,task=%s";
 
-    private final String connectorName;
-    private final String taskId;
+    private final ObjectName objectName;
 
     private final AtomicLong writes = new AtomicLong();
     private final AtomicLong deletes = new AtomicLong();
@@ -48,36 +48,24 @@ public class ElasticsearchSinkConnectorMetrics implements ElasticsearchSinkConne
     private final AtomicReference<String> clusterVersion = new AtomicReference<>("");
     private final AtomicReference<String> apiCompatibilityMode = new AtomicReference<>("");
 
-    private volatile ObjectName objectName;
-
     public ElasticsearchSinkConnectorMetrics(String connectorName, String taskId) {
-        this.connectorName = connectorName;
-        this.taskId = taskId;
+        // Connector names are free-form; quoting unsafe values keeps them registrable rather than
+        // silently dropping the bean.
+        final String name = String.format(JMX_OBJECT_NAME_FORMAT, Sanitizer.jmxSanitize(connectorName), Sanitizer.jmxSanitize(taskId));
+        try {
+            this.objectName = new ObjectName(name);
+        }
+        catch (MalformedObjectNameException e) {
+            throw new DebeziumException("Invalid metric name '" + name + "'", e);
+        }
     }
 
     public void register() {
-        try {
-            objectName = new ObjectName(String.format(
-                    "debezium.elasticsearch:type=connector-metrics,context=sink,server=%s,task=%s", connectorName, taskId));
-            final MBeanServer server = ManagementFactory.getPlatformMBeanServer();
-            if (!server.isRegistered(objectName)) {
-                server.registerMBean(this, objectName);
-            }
-        }
-        catch (Exception e) {
-            LOGGER.warn("Failed to register the sink connector metrics MBean", e);
-        }
+        JmxUtils.registerMXBean(objectName, this);
     }
 
     public void unregister() {
-        try {
-            if (objectName != null && ManagementFactory.getPlatformMBeanServer().isRegistered(objectName)) {
-                ManagementFactory.getPlatformMBeanServer().unregisterMBean(objectName);
-            }
-        }
-        catch (Exception e) {
-            LOGGER.warn("Failed to unregister the sink connector metrics MBean", e);
-        }
+        JmxUtils.unregisterMXBean(objectName);
     }
 
     @Override
