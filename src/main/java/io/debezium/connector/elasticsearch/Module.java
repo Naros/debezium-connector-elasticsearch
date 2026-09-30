@@ -26,7 +26,7 @@ public class Module {
      * @return symbolic name of the connector plugin
      */
     public static String name() {
-        return "Elasticsearch";
+        return "elasticsearch";
     }
 
     /**
