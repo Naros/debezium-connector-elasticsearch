@@ -141,7 +141,7 @@ public class ElasticsearchBulkWriter {
             enforceStallTimeout(pending, blockedSince);
 
             if (!round.progressed()) {
-                if (!round.throttledOnly()) {
+                if (round.budgeted()) {
                     budgetedRetries++;
                     metrics.retried();
                     if (budgetedRetries > config.maxRetries()) {
@@ -156,7 +156,13 @@ public class ElasticsearchBulkWriter {
         }
     }
 
-    private record RoundResult(List<BulkItem> retryable, List<BulkItem> blocked, boolean progressed, boolean throttledOnly) {
+    /**
+     * The outcome of one request. A round is {@code budgeted} when it failed for a reason the
+     * retry budget exists for: a transient non-throttle item failure or a transport failure.
+     * Rejections (429) are backpressure and blocked resources are bounded by the stall timeout,
+     * so neither spends 'max.retries'.
+     */
+    private record RoundResult(List<BulkItem> retryable, List<BulkItem> blocked, boolean progressed, boolean budgeted) {
     }
 
     private RoundResult executeRound(List<BulkItem> chunk, Map<String, Long> blockedSince) {
@@ -236,7 +242,7 @@ public class ElasticsearchBulkWriter {
         else {
             throttle.onSuccess();
         }
-        return new RoundResult(retryable, blocked, progressed, sawRejection && !sawNonThrottleFailure);
+        return new RoundResult(retryable, blocked, progressed, sawNonThrottleFailure);
     }
 
     private RoundResult classifyTransportFailure(List<BulkItem> chunk, Exception failure) {
@@ -248,12 +254,12 @@ public class ElasticsearchBulkWriter {
             LOGGER.warn("A compatibility-shaped transport error occurred; re-probing the cluster version.", failure);
             handshake.invalidate();
             handshake.ensureProbed();
-            return new RoundResult(chunk, List.of(), false, false);
+            return new RoundResult(chunk, List.of(), false, true);
         }
         return switch (classifier.classify(failure)) {
             case TRANSIENT -> {
                 LOGGER.warn("Transient transport failure writing bulk request: {}", describe(failure));
-                yield new RoundResult(chunk, List.of(), false, false);
+                yield new RoundResult(chunk, List.of(), false, true);
             }
             // No unclassified condition is well enough understood to be assumed recoverable.
             default -> throw new ConnectException("Bulk request failed with an unclassified error; failing the task rather "
