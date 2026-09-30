@@ -109,6 +109,8 @@ public class ElasticsearchBulkWriter {
      */
     public void write(List<BulkItem> items) {
         List<BulkItem> pending = new ArrayList<>(items);
+        final Set<String> batchResources = new HashSet<>();
+        items.forEach(item -> batchResources.add(item.resource()));
         final Map<String, Long> blockedSince = new HashMap<>();
         int budgetedRetries = 0;
         long backoffMs = config.retryBackoffMs();
@@ -138,7 +140,7 @@ public class ElasticsearchBulkWriter {
                 break;
             }
 
-            enforceStallTimeout(pending, blockedSince);
+            enforceStallTimeout(pending, batchResources, blockedSince);
 
             if (!round.progressed()) {
                 if (round.budgeted()) {
@@ -268,21 +270,19 @@ public class ElasticsearchBulkWriter {
         };
     }
 
-    private void enforceStallTimeout(List<BulkItem> pending, Map<String, Long> blockedSince) {
+    private void enforceStallTimeout(List<BulkItem> pending, Set<String> batchResources, Map<String, Long> blockedSince) {
         final long now = clock.currentTimeInMillis();
         if (now - lastProgressMs <= config.progressStallTimeoutMs()) {
             return;
         }
         // Blocked resources past the deadline are drained to the error reporter so offsets stay
-        // sound; a task with nothing but blocked work left fails instead, because there is then
-        // no progress to protect (DDD-61 9.1).
-        final Set<String> pendingResources = new HashSet<>();
-        pending.forEach(item -> pendingResources.add(item.resource()));
-        if (!blockedSince.isEmpty() && blockedSince.keySet().containsAll(pendingResources)) {
+        // sound. The task fails instead only when every resource in the batch is blocked, because
+        // there is then no progress to protect (DDD-61 9.1).
+        if (!blockedSince.isEmpty() && blockedSince.keySet().containsAll(batchResources)) {
             throw new ConnectException(String.format(
-                    "No progress for longer than 'progress.stall.timeout.ms' (%d ms) and every pending resource %s is "
+                    "No progress for longer than 'progress.stall.timeout.ms' (%d ms) and every resource in the batch %s is "
                             + "blocked; last error: %s",
-                    config.progressStallTimeoutMs(), pendingResources, describe(lastFailure)),
+                    config.progressStallTimeoutMs(), batchResources, describe(lastFailure)),
                     lastFailure);
         }
         final List<BulkItem> expired = pending.stream().filter(item -> blockedSince.containsKey(item.resource())).toList();
