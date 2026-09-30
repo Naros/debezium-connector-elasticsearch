@@ -120,9 +120,11 @@ public class MappingGenerator {
             case Time.SCHEMA_NAME, MicroTime.SCHEMA_NAME, NanoTime.SCHEMA_NAME,
                     org.apache.kafka.connect.data.Time.LOGICAL_NAME ->
                 config.temporalOutputMode() == TemporalOutputMode.ISO8601 ? keyword() : Property.of(p -> p.long_(l -> l));
-            case Timestamp.SCHEMA_NAME, MicroTimestamp.SCHEMA_NAME,
-                    org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME, ZonedTimestamp.SCHEMA_NAME ->
+            case Timestamp.SCHEMA_NAME, MicroTimestamp.SCHEMA_NAME, org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME ->
                 dateProperty("strict_date_optional_time||epoch_millis");
+            // The converter passes a ZonedTimestamp through as its ISO-8601 string in every
+            // temporal.output.mode, so the mapping must parse that string in every mode too.
+            case ZonedTimestamp.SCHEMA_NAME -> Property.of(p -> p.date(d -> d.format("strict_date_optional_time||epoch_millis")));
             case NanoTimestamp.SCHEMA_NAME -> switch (config.temporalOutputMode()) {
                 case ISO8601 -> Property.of(p -> p.dateNanos(d -> d.format("strict_date_optional_time_nanos")));
                 case EPOCH_MILLIS -> dateProperty("epoch_millis");
