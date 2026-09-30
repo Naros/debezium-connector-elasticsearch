@@ -167,6 +167,21 @@ public class ElasticsearchBulkWriterTest {
         assertThat(reportedMessages.get(0)).contains("mapper_parsing_exception").contains("'a'").contains("status 400");
         assertThat(metrics.getTotalNumberOfWrites()).isEqualTo(1);
         assertThat(metrics.getTotalNumberOfErrantRecords()).isEqualTo(1);
+        assertThat(metrics.getTotalNumberOfVersionConflicts()).isZero();
+    }
+
+    @Test
+    void shouldCountVersionConflictsBeyondTheErrantRecord() {
+        // DDD-61 9.3: a stale write is visible on the version conflict counter as well as on the DLQ.
+        stub.enqueueBulk(a -> "1".equals(a.id()) ? ItemResult.error(409, "version_conflict_engine_exception") : ItemResult.ok());
+        final BulkItem stale = index("a", "1");
+
+        writer(Map.of()).write(List.of(stale, index("a", "2")));
+
+        assertThat(reported).containsExactly(stale.record());
+        assertThat(metrics.getTotalNumberOfVersionConflicts()).isEqualTo(1);
+        assertThat(metrics.getTotalNumberOfErrantRecords()).isEqualTo(1);
+        assertThat(metrics.getTotalNumberOfWrites()).isEqualTo(1);
     }
 
     @Test
