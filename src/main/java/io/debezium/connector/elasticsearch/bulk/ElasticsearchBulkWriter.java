@@ -223,6 +223,9 @@ public class ElasticsearchBulkWriter {
                 }
                 case RECORD -> {
                     progressed = true;
+                    if (isVersionConflict(result)) {
+                        metrics.versionConflict();
+                    }
                     reportRecord(item, result);
                 }
                 case RESOURCE_FATAL -> {
@@ -329,6 +332,11 @@ public class ElasticsearchBulkWriter {
                 record.topicName(), record.partition(), record.offset(), describe(failure));
         errorReporter.report(record, failure);
         metrics.errantRecordsReported(1);
+    }
+
+    private static boolean isVersionConflict(BulkResponseItem result) {
+        return result.status() == 409
+                || (result.error() != null && "version_conflict_engine_exception".equals(result.error().type()));
     }
 
     private DebeziumException itemFailure(BulkItem item, BulkResponseItem result) {
