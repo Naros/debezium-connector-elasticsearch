@@ -279,7 +279,13 @@ public class ElasticsearchSinkConnectorTask extends SinkTask {
             }
             return ((InternalSinkRecord) record).context().original().topic();
         }
-        return null;
+        try {
+            // KIP-793 (Kafka 3.6): the pre-transformation topic is on the record itself.
+            return record.originalTopic();
+        }
+        catch (NoSuchMethodError e) {
+            return record.topic();
+        }
     }
 
     private Integer getOriginalKafkaPartition(SinkRecord record) {
