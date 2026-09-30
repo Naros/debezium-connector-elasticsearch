@@ -7,6 +7,7 @@ package io.debezium.connector.elasticsearch.client;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import org.apache.kafka.connect.errors.ConnectException;
 import org.elasticsearch.client.Request;
@@ -18,7 +19,8 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import io.debezium.connector.elasticsearch.util.Sleeper;
+import io.debezium.connector.elasticsearch.util.Backoff;
+import io.debezium.util.DelayStrategy;
 
 /**
  * The startup cluster-version handshake and its failure contract. No code path may turn a
@@ -48,24 +50,20 @@ public class ClusterVersionHandshake {
 
     private final RestClient restClient;
     private final int maxRetries;
-    private final long retryBackoffMs;
-    private final long retryBackoffMaxMs;
-    private final Sleeper sleeper;
+    private final Supplier<DelayStrategy> backoffs;
     private final AtomicReference<ClusterVersion> probed = new AtomicReference<>();
 
     public ClusterVersionHandshake(RestClient restClient, int maxRetries, long retryBackoffMs, long retryBackoffMaxMs) {
-        this(restClient, maxRetries, retryBackoffMs, retryBackoffMaxMs, Sleeper.system());
+        this(restClient, maxRetries, () -> Backoff.exponential(retryBackoffMs, retryBackoffMaxMs));
     }
 
     /**
-     * The sleeper governs the pause between probe attempts; injectable for tests.
+     * The supplier yields the backoff between the attempts of one probe; injectable for tests.
      */
-    public ClusterVersionHandshake(RestClient restClient, int maxRetries, long retryBackoffMs, long retryBackoffMaxMs, Sleeper sleeper) {
+    public ClusterVersionHandshake(RestClient restClient, int maxRetries, Supplier<DelayStrategy> backoffs) {
         this.restClient = restClient;
         this.maxRetries = maxRetries;
-        this.retryBackoffMs = retryBackoffMs;
-        this.retryBackoffMaxMs = retryBackoffMaxMs;
-        this.sleeper = sleeper;
+        this.backoffs = backoffs;
     }
 
     /**
@@ -94,7 +92,7 @@ public class ClusterVersionHandshake {
 
     private ClusterVersion probeWithRetry() {
         IOException lastFailure = null;
-        long backoff = retryBackoffMs;
+        final DelayStrategy backoff = backoffs.get();
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 return validate(probeOnce());
@@ -105,14 +103,10 @@ public class ClusterVersionHandshake {
                 if (attempt == maxRetries) {
                     break;
                 }
-                try {
-                    sleeper.sleep(backoff);
+                backoff.sleepWhen(true);
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new ConnectException("Interrupted while probing the Elasticsearch cluster version");
                 }
-                catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new ConnectException("Interrupted while probing the Elasticsearch cluster version", interrupted);
-                }
-                backoff = Math.min(backoff * 2, retryBackoffMaxMs);
             }
         }
         // There is no fallback to an assumed compatibility mode: the retry budget is exhausted,

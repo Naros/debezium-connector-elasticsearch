@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import org.apache.kafka.connect.errors.ConnectException;
 import org.elasticsearch.client.ResponseException;
@@ -21,11 +22,12 @@ import io.debezium.DebeziumException;
 import io.debezium.connector.elasticsearch.ElasticsearchSinkConnectorConfig;
 import io.debezium.connector.elasticsearch.client.ClusterVersionHandshake;
 import io.debezium.connector.elasticsearch.metrics.ElasticsearchSinkConnectorMetrics;
-import io.debezium.connector.elasticsearch.util.Sleeper;
+import io.debezium.connector.elasticsearch.util.Backoff;
 import io.debezium.dlq.ErrorReporter;
 import io.debezium.sink.DebeziumSinkRecord;
 import io.debezium.sink.batch.BatchRecord;
 import io.debezium.util.Clock;
+import io.debezium.util.DelayStrategy;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
@@ -72,7 +74,7 @@ public class ElasticsearchBulkWriter {
     private final ElasticsearchSinkConnectorMetrics metrics;
     private final ClusterVersionHandshake handshake;
     private final Clock clock;
-    private final Sleeper sleeper;
+    private final Supplier<DelayStrategy> backoffs;
 
     private long lastProgressMs;
     private Exception lastFailure;
@@ -80,17 +82,18 @@ public class ElasticsearchBulkWriter {
     public ElasticsearchBulkWriter(ElasticsearchClient client, ElasticsearchSinkConnectorConfig config,
                                    AdaptiveThrottle throttle, ErrorReporter errorReporter,
                                    ElasticsearchSinkConnectorMetrics metrics, ClusterVersionHandshake handshake) {
-        this(client, config, throttle, errorReporter, metrics, handshake, Clock.system(), Sleeper.system());
+        this(client, config, throttle, errorReporter, metrics, handshake, Clock.system(),
+                () -> Backoff.exponential(config.retryBackoffMs(), config.retryBackoffMaxMs()));
     }
 
     /**
-     * The clock and sleeper govern backoff and {@code progress.stall.timeout.ms}; injectable so
-     * those paths are testable without wall time.
+     * The clock governs {@code progress.stall.timeout.ms} and the supplier yields a fresh retry
+     * backoff per batch; both injectable so those paths are testable without wall time.
      */
     public ElasticsearchBulkWriter(ElasticsearchClient client, ElasticsearchSinkConnectorConfig config,
                                    AdaptiveThrottle throttle, ErrorReporter errorReporter,
                                    ElasticsearchSinkConnectorMetrics metrics, ClusterVersionHandshake handshake,
-                                   Clock clock, Sleeper sleeper) {
+                                   Clock clock, Supplier<DelayStrategy> backoffs) {
         this.client = client;
         this.config = config;
         this.classifier = new BulkResponseClassifier(config.errorClassificationOverrides());
@@ -99,7 +102,7 @@ public class ElasticsearchBulkWriter {
         this.metrics = metrics;
         this.handshake = handshake;
         this.clock = clock;
-        this.sleeper = sleeper;
+        this.backoffs = backoffs;
         this.lastProgressMs = clock.currentTimeInMillis();
     }
 
@@ -113,7 +116,7 @@ public class ElasticsearchBulkWriter {
         items.forEach(item -> batchResources.add(item.resource()));
         final Map<String, Long> blockedSince = new HashMap<>();
         int budgetedRetries = 0;
-        long backoffMs = config.retryBackoffMs();
+        final DelayStrategy backoff = backoffs.get();
         lastProgressMs = clock.currentTimeInMillis();
 
         while (!pending.isEmpty()) {
@@ -129,7 +132,7 @@ public class ElasticsearchBulkWriter {
             if (round.progressed()) {
                 lastProgressMs = clock.currentTimeInMillis();
                 budgetedRetries = 0;
-                backoffMs = config.retryBackoffMs();
+                backoff.sleepWhen(false);
                 metrics.bulkRequestCompleted();
             }
             metrics.effectiveBatchSize(throttle.effectiveBatchSize());
@@ -152,8 +155,7 @@ public class ElasticsearchBulkWriter {
                                 budgetedRetries, describe(lastFailure)), lastFailure);
                     }
                 }
-                sleep(backoffMs);
-                backoffMs = Math.min(backoffMs * 2, config.retryBackoffMaxMs());
+                pause(backoff);
             }
         }
     }
@@ -373,13 +375,12 @@ public class ElasticsearchBulkWriter {
         return failure == null ? "none" : failure.getMessage();
     }
 
-    private void sleep(long millis) {
-        try {
-            sleeper.sleep(millis);
-        }
-        catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new ConnectException("Interrupted while backing off between bulk retries", e);
+    private static void pause(DelayStrategy backoff) {
+        // DelayStrategy swallows the interrupt and restores the flag; a stopping task must not
+        // keep spinning through its retry budget.
+        backoff.sleepWhen(true);
+        if (Thread.currentThread().isInterrupted()) {
+            throw new ConnectException("Interrupted while backing off between bulk retries");
         }
     }
 }
