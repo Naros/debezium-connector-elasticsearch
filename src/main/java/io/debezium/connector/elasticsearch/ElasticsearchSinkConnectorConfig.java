@@ -1636,8 +1636,7 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
         this.primaryKeyMode = PrimaryKeyMode.parse(config.getString(PRIMARY_KEY_MODE_FIELD));
         // Ordered and trimmed: the configured order is the '_id' composition order (DDD-61 3).
         this.primaryKeyFields = new LinkedHashSet<>(
-                Strings.listOf(config.getString(SinkConnectorConfig.PRIMARY_KEY_FIELDS_FIELD), s -> s.split(","), String::trim)
-                        .stream().filter(s -> !s.isEmpty()).toList());
+                config.getList(SinkConnectorConfig.PRIMARY_KEY_FIELDS_FIELD).stream().filter(s -> !s.isEmpty()).toList());
         this.documentIdSeparator = config.getString(DOCUMENT_ID_SEPARATOR_FIELD);
         this.nonKeyOrdering = EnumeratedValue.parse(NonKeyOrdering.class, config.getString(DOCUMENT_ID_NON_KEY_ORDERING_FIELD));
         this.documentMetadataFields = parseMetadataFields(config.getString(DOCUMENT_METADATA_FIELDS_FIELD));
@@ -1653,8 +1652,7 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
         this.ingestPipeline = config.getString(INGEST_PIPELINE_FIELD);
         this.ingestPipelineValidate = config.getBoolean(INGEST_PIPELINE_VALIDATE_FIELD);
         this.truncateMode = enumValue(TruncateMode.class, TRUNCATE_MODE_FIELD);
-        this.truncateAllowedResources = Strings.listOf(config.getString(TRUNCATE_ALLOWED_RESOURCES_FIELD), s -> s.split(","), String::trim)
-                .stream().filter(s -> !s.isEmpty()).toList();
+        this.truncateAllowedResources = config.getList(TRUNCATE_ALLOWED_RESOURCES_FIELD).stream().filter(s -> !s.isEmpty()).toList();
         this.truncateAllowWildcard = config.getBoolean(TRUNCATE_ALLOW_WILDCARD_FIELD);
         this.versionStrategy = enumValue(VersionStrategyType.class, VERSION_STRATEGY_FIELD);
         this.versionEnforcement = enumValue(VersionEnforcement.class, VERSION_ENFORCEMENT_FIELD);
@@ -1685,7 +1683,7 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
         this.fieldNameSeparatorReplacement = config.getString(FIELD_NAME_SEPARATOR_REPLACEMENT_FIELD);
         this.mappingMode = enumValue(MappingMode.class, MAPPING_MODE_FIELD);
         this.mappingDynamic = enumValue(MappingDynamic.class, MAPPING_DYNAMIC_FIELD);
-        this.mappingComposedOf = Strings.listOf(config.getString(MAPPING_COMPOSED_OF_FIELD), s -> s.split(","), String::trim);
+        this.mappingComposedOf = config.getList(MAPPING_COMPOSED_OF_FIELD);
         this.mappingSettings = parseMappingSettings(config.getString(MAPPING_SETTINGS_FIELD));
         this.stringMappingMode = enumValue(StringMappingMode.class, STRING_MAPPING_MODE_FIELD);
         this.structMappingMode = enumValue(StructMappingMode.class, STRUCT_MAPPING_MODE_FIELD);
@@ -2204,7 +2202,7 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
     }
 
     public List<String> connectionUrls() {
-        return Strings.listOf(config.getString(CONNECTION_URL_FIELD), s -> s.split(","), String::trim);
+        return config.getList(CONNECTION_URL_FIELD);
     }
 
     public String connectionCloudId() {
@@ -2304,11 +2302,11 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
     }
 
     public List<String> tlsProtocols() {
-        return Strings.listOf(config.getString(CONNECTION_TLS_PROTOCOLS_FIELD), s -> s.split(","), String::trim);
+        return config.getList(CONNECTION_TLS_PROTOCOLS_FIELD);
     }
 
     public List<String> tlsCipherSuites() {
-        return Strings.listOf(config.getString(CONNECTION_TLS_CIPHER_SUITES_FIELD), s -> s.split(","), String::trim);
+        return config.getList(CONNECTION_TLS_CIPHER_SUITES_FIELD);
     }
 
     public String tlsCaFingerprint() {
