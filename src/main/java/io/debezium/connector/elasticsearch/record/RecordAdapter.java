@@ -89,7 +89,7 @@ public class RecordAdapter {
     }
 
     private SinkOperation adaptFlattened(DebeziumSinkRecord record) {
-        if (record.value() == null) {
+        if (isNullValueWithSchema(record)) {
             // ExtractNewRecordState with delete.handling.mode=none: a null value with a schema is
             // the delete signal on this path.
             return new SinkOperation.Delete(record);
@@ -109,6 +109,19 @@ public class RecordAdapter {
             return SinkOperation.Write.of(record, null, record.getPayload());
         }
         return SinkOperation.Write.ofRaw(record, record.value());
+    }
+
+    /**
+     * Whether the Kafka value is null while a value schema is present: ExtractNewRecordState with
+     * {@code delete.handling.mode=none}. The shared binding substitutes an empty struct for such a
+     * value, so the original record is consulted.
+     */
+    private boolean isNullValueWithSchema(DebeziumSinkRecord record) {
+        if (record instanceof KafkaDebeziumSinkRecord kafkaRecord) {
+            final org.apache.kafka.connect.sink.SinkRecord original = kafkaRecord.getOriginalKafkaRecord();
+            return original.value() == null && original.valueSchema() != null;
+        }
+        return record.value() == null && record.valueSchema() != null;
     }
 
     private SinkOperation adaptTombstone(DebeziumSinkRecord record) {
@@ -133,7 +146,7 @@ public class RecordAdapter {
     }
 
     private boolean isFlattenedDebezium(DebeziumSinkRecord record) {
-        if (record.value() == null && record.valueSchema() != null) {
+        if (isNullValueWithSchema(record)) {
             return true;
         }
         if (!(record instanceof KafkaDebeziumSinkRecord kafkaRecord) || !kafkaRecord.isFlattened()) {
