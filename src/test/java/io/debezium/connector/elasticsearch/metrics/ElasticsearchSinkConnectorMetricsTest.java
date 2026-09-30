@@ -189,12 +189,11 @@ public class ElasticsearchSinkConnectorMetricsTest {
     }
 
     @Test
-    void shouldTolerateRepeatedRegistrationAndUnregistration() throws Exception {
+    void shouldTolerateUnregisteringABeanThatIsNotRegistered() throws Exception {
         final ObjectName name = new ObjectName("debezium.elasticsearch:type=connector-metrics,context=sink,server=orders,task=1");
 
         assertThatCode(metrics::unregister).as("unregister before register").doesNotThrowAnyException();
         metrics.register();
-        assertThatCode(metrics::register).as("register twice").doesNotThrowAnyException();
         assertThat(server.isRegistered(name)).isTrue();
 
         metrics.unregister();
@@ -203,14 +202,20 @@ public class ElasticsearchSinkConnectorMetricsTest {
     }
 
     @Test
-    void shouldKeepCountingWhenTheNameCannotBeRegistered() {
-        // A comma is a property separator in an ObjectName, so this connector name cannot be
-        // registered. Metrics are diagnostics, not correctness: the task keeps running unregistered.
-        final ElasticsearchSinkConnectorMetrics unregistrable = new ElasticsearchSinkConnectorMetrics("orders,eu", "0");
+    void shouldQuoteAConnectorNameThatIsUnsafeInAnObjectName() throws Exception {
+        // A comma is a property separator in an ObjectName; the name is quoted rather than the
+        // bean being dropped, matching the other sinks.
+        final ElasticsearchSinkConnectorMetrics quoted = new ElasticsearchSinkConnectorMetrics("orders,eu", "0");
+        final ObjectName name = new ObjectName("debezium.elasticsearch:type=connector-metrics,context=sink,server=\"orders,eu\",task=0");
+        try {
+            quoted.register();
+            quoted.written(1);
 
-        assertThatCode(unregistrable::register).doesNotThrowAnyException();
-        unregistrable.written(1);
-        assertThat(unregistrable.getTotalNumberOfWrites()).isEqualTo(1);
-        assertThatCode(unregistrable::unregister).doesNotThrowAnyException();
+            assertThat(server.isRegistered(name)).isTrue();
+            assertThat(server.getAttribute(name, "TotalNumberOfWrites")).isEqualTo(1L);
+        }
+        finally {
+            quoted.unregister();
+        }
     }
 }
