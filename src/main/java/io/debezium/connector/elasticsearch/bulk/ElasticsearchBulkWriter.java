@@ -180,6 +180,14 @@ public class ElasticsearchBulkWriter {
         boolean sawNonThrottleFailure = false;
 
         final List<BulkResponseItem> results = response.items();
+        if (results.size() != chunk.size()) {
+            // Fewer results than operations would silently drop the unanswered items as done;
+            // more is a response for some other request. Neither is a shape to recover from.
+            throw new ConnectException(String.format(
+                    "Bulk response carried %d item results for %d operations; failing the task rather than guessing which "
+                            + "operations were applied.",
+                    results.size(), chunk.size()));
+        }
         for (int i = 0; i < results.size(); i++) {
             final BulkResponseItem result = results.get(i);
             final BulkItem item = chunk.get(i);
