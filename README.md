@@ -68,7 +68,21 @@ Build the connector plugin archive:
 
 ## Testing
 
-TBD
+Unit tests run with the standard build. Integration tests (`*IT`) start an Elasticsearch
+container through Testcontainers and need Docker:
+
+```bash
+./mvnw clean verify
+```
+
+The integration tests run against Elasticsearch 8.x by default. Point them at another image,
+such as a 9.x release, with the `elasticsearch.image` property:
+
+```bash
+./mvnw clean verify -Delasticsearch.image=docker.elastic.co/elasticsearch/elasticsearch:9.5.1
+```
+
+Skip the integration tests with `-DskipITs`, or skip Docker entirely with `-Dquick`.
 
 ## Contributing
 
