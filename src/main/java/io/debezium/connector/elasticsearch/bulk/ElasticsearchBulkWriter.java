@@ -21,9 +21,11 @@ import io.debezium.DebeziumException;
 import io.debezium.connector.elasticsearch.ElasticsearchSinkConnectorConfig;
 import io.debezium.connector.elasticsearch.client.ClusterVersionHandshake;
 import io.debezium.connector.elasticsearch.metrics.ElasticsearchSinkConnectorMetrics;
+import io.debezium.connector.elasticsearch.util.Sleeper;
 import io.debezium.dlq.ErrorReporter;
 import io.debezium.sink.DebeziumSinkRecord;
 import io.debezium.sink.batch.BatchRecord;
+import io.debezium.util.Clock;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
@@ -69,13 +71,26 @@ public class ElasticsearchBulkWriter {
     private final ErrorReporter errorReporter;
     private final ElasticsearchSinkConnectorMetrics metrics;
     private final ClusterVersionHandshake handshake;
+    private final Clock clock;
+    private final Sleeper sleeper;
 
-    private long lastProgressMs = System.currentTimeMillis();
+    private long lastProgressMs;
     private Exception lastFailure;
 
     public ElasticsearchBulkWriter(ElasticsearchClient client, ElasticsearchSinkConnectorConfig config,
                                    AdaptiveThrottle throttle, ErrorReporter errorReporter,
                                    ElasticsearchSinkConnectorMetrics metrics, ClusterVersionHandshake handshake) {
+        this(client, config, throttle, errorReporter, metrics, handshake, Clock.system(), Sleeper.system());
+    }
+
+    /**
+     * The clock and sleeper govern backoff and {@code progress.stall.timeout.ms}; injectable so
+     * those paths are testable without wall time.
+     */
+    public ElasticsearchBulkWriter(ElasticsearchClient client, ElasticsearchSinkConnectorConfig config,
+                                   AdaptiveThrottle throttle, ErrorReporter errorReporter,
+                                   ElasticsearchSinkConnectorMetrics metrics, ClusterVersionHandshake handshake,
+                                   Clock clock, Sleeper sleeper) {
         this.client = client;
         this.config = config;
         this.classifier = new BulkResponseClassifier(config.errorClassificationOverrides());
@@ -83,6 +98,9 @@ public class ElasticsearchBulkWriter {
         this.errorReporter = errorReporter;
         this.metrics = metrics;
         this.handshake = handshake;
+        this.clock = clock;
+        this.sleeper = sleeper;
+        this.lastProgressMs = clock.currentTimeInMillis();
     }
 
     /**
@@ -94,7 +112,7 @@ public class ElasticsearchBulkWriter {
         final Map<String, Long> blockedSince = new HashMap<>();
         int budgetedRetries = 0;
         long backoffMs = config.retryBackoffMs();
-        lastProgressMs = System.currentTimeMillis();
+        lastProgressMs = clock.currentTimeInMillis();
 
         while (!pending.isEmpty()) {
             // The chunk is a prefix of the pending list; unprocessed items stay pending in order.
@@ -107,7 +125,7 @@ public class ElasticsearchBulkWriter {
             pending.addAll(rest);
 
             if (round.progressed()) {
-                lastProgressMs = System.currentTimeMillis();
+                lastProgressMs = clock.currentTimeInMillis();
                 budgetedRetries = 0;
                 backoffMs = config.retryBackoffMs();
                 metrics.bulkRequestCompleted();
@@ -193,7 +211,7 @@ public class ElasticsearchBulkWriter {
                 }
                 case RESOURCE_FATAL -> {
                     lastFailure = itemFailure(item, result);
-                    if (blockedSince.putIfAbsent(item.resource(), System.currentTimeMillis()) == null) {
+                    if (blockedSince.putIfAbsent(item.resource(), clock.currentTimeInMillis()) == null) {
                         LOGGER.warn("Resource '{}' is blocked and will be retried until 'progress.stall.timeout.ms' elapses: {}",
                                 item.resource(), describe(lastFailure));
                     }
@@ -237,7 +255,7 @@ public class ElasticsearchBulkWriter {
     }
 
     private void enforceStallTimeout(List<BulkItem> pending, Map<String, Long> blockedSince) {
-        final long now = System.currentTimeMillis();
+        final long now = clock.currentTimeInMillis();
         if (now - lastProgressMs <= config.progressStallTimeoutMs()) {
             return;
         }
@@ -261,7 +279,7 @@ public class ElasticsearchBulkWriter {
                 blockedSince.remove(item.resource());
             });
             pending.removeAll(expired);
-            lastProgressMs = System.currentTimeMillis();
+            lastProgressMs = clock.currentTimeInMillis();
             return;
         }
         throw new ConnectException(String.format(
@@ -335,7 +353,7 @@ public class ElasticsearchBulkWriter {
 
     private void sleep(long millis) {
         try {
-            Thread.sleep(millis);
+            sleeper.sleep(millis);
         }
         catch (InterruptedException e) {
             Thread.currentThread().interrupt();
