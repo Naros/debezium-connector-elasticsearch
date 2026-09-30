@@ -326,8 +326,10 @@ public class DocumentConverterTest {
 
     @ParameterizedTest
     @CsvSource({ "none,user.name,user.name", "elasticsearch,user.name,user_name", "avro,user.name-1,user_name_1",
-            "avro_unicode,user.name,user_u2ename", "avro,1st,_st" })
+            "avro_unicode,user.name,user_u002ename", "avro_unicode,user_name,user_u005fname", "avro,1st,_1st" })
     void shouldAdjustFieldNamesPerMode(String mode, String name, String expected) {
+        // The avro modes are the source connectors' field namers, so a sink document carries the
+        // same field names a source would have emitted under the same setting.
         final Schema schema = SchemaBuilder.struct().field(name, Schema.STRING_SCHEMA).build();
         assertThat(convert(config(ElasticsearchSinkConnectorConfig.FIELD_NAME_ADJUSTMENT_MODE, mode), schema,
                 new Struct(schema).put(name, "v"))).containsOnlyKeys(expected);
