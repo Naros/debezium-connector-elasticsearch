@@ -9,8 +9,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 
 import org.apache.kafka.connect.errors.ConnectException;
 import org.junit.jupiter.api.AfterEach;
@@ -32,7 +30,7 @@ import io.debezium.connector.elasticsearch.util.StubElasticsearch.StubResponse;
 @Tag("UnitTests")
 public class ClusterVersionHandshakeTest {
 
-    private final List<Long> sleeps = new ArrayList<>();
+    private int pauses;
     private StubElasticsearch stub;
 
     @BeforeEach
@@ -103,7 +101,7 @@ public class ClusterVersionHandshakeTest {
         assertThat(handshake(3).ensureProbed().number()).isEqualTo("8.19.20");
 
         assertThat(stub.requests("GET", "/")).hasSize(3);
-        assertThat(sleeps).containsExactly(100L, 200L);
+        assertThat(pauses).as("one backoff between each attempt").isEqualTo(2);
     }
 
     @Test
@@ -118,7 +116,7 @@ public class ClusterVersionHandshakeTest {
                 .hasMessageContaining("failed 3 times")
                 .hasMessageContaining("will not start with an assumed compatibility mode")
                 .cause().isInstanceOf(IOException.class);
-        assertThat(sleeps).containsExactly(100L, 200L);
+        assertThat(pauses).as("one backoff between each attempt").isEqualTo(2);
 
         // The cluster recovers: the next call probes again rather than replaying the failure.
         assertThat(handshake.ensureProbed().number()).isEqualTo("8.19.20");
@@ -138,6 +136,11 @@ public class ClusterVersionHandshakeTest {
     }
 
     private ClusterVersionHandshake handshake(int maxRetries) {
-        return new ClusterVersionHandshake(stub.restClient(), maxRetries, 100, 250, sleeps::add);
+        return new ClusterVersionHandshake(stub.restClient(), maxRetries, () -> criteria -> {
+            if (criteria) {
+                pauses++;
+            }
+            return criteria;
+        });
     }
 }
