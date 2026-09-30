@@ -1667,8 +1667,10 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
         this.retryBackoffMs = config.getLong(RETRY_BACKOFF_MS_FIELD);
         this.retryBackoffMaxMs = config.getLong(RETRY_BACKOFF_MAX_MS_FIELD);
         this.progressStallTimeoutMs = config.getLong(PROGRESS_STALL_TIMEOUT_MS_FIELD);
-        this.maxRequestsPerSecond = config.hasKey(MAX_REQUESTS_PER_SECOND) ? Double.valueOf(config.getString(MAX_REQUESTS_PER_SECOND_FIELD)) : null;
-        this.maxBytesPerSecond = config.hasKey(MAX_BYTES_PER_SECOND) ? config.getLong(MAX_BYTES_PER_SECOND) : null;
+        // Parsed leniently here; a malformed value is reported by the field validator in validate()
+        // with the property named, rather than as a bare NumberFormatException from construction.
+        this.maxRequestsPerSecond = config.hasKey(MAX_REQUESTS_PER_SECOND) ? parseDoubleOrNull(config.getString(MAX_REQUESTS_PER_SECOND_FIELD)) : null;
+        this.maxBytesPerSecond = config.hasKey(MAX_BYTES_PER_SECOND) ? parseLongOrNull(config.getString(MAX_BYTES_PER_SECOND_FIELD)) : null;
         this.decimalOutputMode = parse(DecimalOutputMode.class, config.getString(DECIMAL_OUTPUT_MODE_FIELD), DecimalOutputMode.NUMERIC);
         this.temporalOutputMode = parse(TemporalOutputMode.class, config.getString(TEMPORAL_OUTPUT_MODE_FIELD), TemporalOutputMode.ISO8601);
         this.intervalOutputMode = parse(IntervalOutputMode.class, config.getString(INTERVAL_OUTPUT_MODE_FIELD), IntervalOutputMode.STRING);
@@ -2166,6 +2168,24 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
             result.put(parts[0].trim(), parts[1].trim());
         }
         return result;
+    }
+
+    private static Double parseDoubleOrNull(String value) {
+        try {
+            return value == null ? null : Double.valueOf(value.trim());
+        }
+        catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static Long parseLongOrNull(String value) {
+        try {
+            return value == null ? null : Long.valueOf(value.trim());
+        }
+        catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static <T extends Enum<T> & EnumeratedValue> T parse(Class<T> type, String value, T defaultValue) {
