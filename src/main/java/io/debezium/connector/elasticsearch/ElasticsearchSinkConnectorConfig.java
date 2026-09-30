@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -1632,7 +1633,10 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
         this.eventFormat = parse(EventFormat.class, config.getString(EVENT_FORMAT_FIELD), EventFormat.AUTO);
         this.tombstoneMode = parse(TombstoneMode.class, config.getString(TOMBSTONE_MODE_FIELD), TombstoneMode.AUTO);
         this.primaryKeyMode = PrimaryKeyMode.parse(config.getString(PRIMARY_KEY_MODE_FIELD));
-        this.primaryKeyFields = Strings.setOf(config.getString(SinkConnectorConfig.PRIMARY_KEY_FIELDS_FIELD), String::new);
+        // Ordered and trimmed: the configured order is the '_id' composition order (DDD-61 3).
+        this.primaryKeyFields = new LinkedHashSet<>(
+                Strings.listOf(config.getString(SinkConnectorConfig.PRIMARY_KEY_FIELDS_FIELD), s -> s.split(","), String::trim)
+                        .stream().filter(s -> !s.isEmpty()).toList());
         this.documentIdSeparator = config.getString(DOCUMENT_ID_SEPARATOR_FIELD);
         this.nonKeyOrdering = parse(NonKeyOrdering.class, config.getString(DOCUMENT_ID_NON_KEY_ORDERING_FIELD), null);
         this.documentMetadataFields = parseMetadataFields(config.getString(DOCUMENT_METADATA_FIELDS_FIELD));
