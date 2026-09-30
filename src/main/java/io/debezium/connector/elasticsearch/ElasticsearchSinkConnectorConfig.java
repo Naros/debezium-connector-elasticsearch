@@ -1631,34 +1631,34 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
     public ElasticsearchSinkConnectorConfig(Map<String, String> props) {
         this.config = Configuration.from(props);
 
-        this.eventFormat = parse(EventFormat.class, config.getString(EVENT_FORMAT_FIELD), EventFormat.AUTO);
-        this.tombstoneMode = parse(TombstoneMode.class, config.getString(TOMBSTONE_MODE_FIELD), TombstoneMode.AUTO);
+        this.eventFormat = enumValue(EventFormat.class, EVENT_FORMAT_FIELD);
+        this.tombstoneMode = enumValue(TombstoneMode.class, TOMBSTONE_MODE_FIELD);
         this.primaryKeyMode = PrimaryKeyMode.parse(config.getString(PRIMARY_KEY_MODE_FIELD));
         // Ordered and trimmed: the configured order is the '_id' composition order (DDD-61 3).
         this.primaryKeyFields = new LinkedHashSet<>(
                 Strings.listOf(config.getString(SinkConnectorConfig.PRIMARY_KEY_FIELDS_FIELD), s -> s.split(","), String::trim)
                         .stream().filter(s -> !s.isEmpty()).toList());
         this.documentIdSeparator = config.getString(DOCUMENT_ID_SEPARATOR_FIELD);
-        this.nonKeyOrdering = parse(NonKeyOrdering.class, config.getString(DOCUMENT_ID_NON_KEY_ORDERING_FIELD), null);
+        this.nonKeyOrdering = EnumeratedValue.parse(NonKeyOrdering.class, config.getString(DOCUMENT_ID_NON_KEY_ORDERING_FIELD));
         this.documentMetadataFields = parseMetadataFields(config.getString(DOCUMENT_METADATA_FIELDS_FIELD));
         this.documentMetadataPrefix = config.getString(DOCUMENT_METADATA_PREFIX_FIELD);
         this.collectionNameFormat = config.getString(SinkConnectorConfig.COLLECTION_NAME_FORMAT_FIELD);
         this.resourceNameTimezone = config.getString(RESOURCE_NAME_TIMEZONE_FIELD);
-        this.invalidNameHandling = parse(InvalidNameHandling.class, config.getString(RESOURCE_NAME_INVALID_HANDLING_FIELD), InvalidNameHandling.FAIL);
+        this.invalidNameHandling = enumValue(InvalidNameHandling.class, RESOURCE_NAME_INVALID_HANDLING_FIELD);
         this.resourceNameReplacement = config.getString(RESOURCE_NAME_REPLACEMENT_FIELD);
-        this.resourceType = parse(ResourceType.class, config.getString(RESOURCE_TYPE_FIELD), ResourceType.INDEX);
+        this.resourceType = enumValue(ResourceType.class, RESOURCE_TYPE_FIELD);
         this.resourceAutoCreate = config.getBoolean(RESOURCE_AUTO_CREATE_FIELD);
         this.topicToResourceMapping = parsePairs(config.getString(TOPIC_TO_RESOURCE_MAPPING_FIELD), TOPIC_TO_RESOURCE_MAPPING);
         this.indexRoutingField = config.getString(INDEX_ROUTING_FIELD_FIELD);
         this.ingestPipeline = config.getString(INGEST_PIPELINE_FIELD);
         this.ingestPipelineValidate = config.getBoolean(INGEST_PIPELINE_VALIDATE_FIELD);
-        this.truncateMode = parse(TruncateMode.class, config.getString(TRUNCATE_MODE_FIELD), TruncateMode.IGNORE);
+        this.truncateMode = enumValue(TruncateMode.class, TRUNCATE_MODE_FIELD);
         this.truncateAllowedResources = Strings.listOf(config.getString(TRUNCATE_ALLOWED_RESOURCES_FIELD), s -> s.split(","), String::trim)
                 .stream().filter(s -> !s.isEmpty()).toList();
         this.truncateAllowWildcard = config.getBoolean(TRUNCATE_ALLOW_WILDCARD_FIELD);
-        this.versionStrategy = parse(VersionStrategyType.class, config.getString(VERSION_STRATEGY_FIELD), VersionStrategyType.NONE);
-        this.versionEnforcement = parse(VersionEnforcement.class, config.getString(VERSION_ENFORCEMENT_FIELD), VersionEnforcement.AUTO);
-        this.versionConflictMode = parse(VersionConflictMode.class, config.getString(VERSION_CONFLICT_MODE_FIELD), VersionConflictMode.SKIP);
+        this.versionStrategy = enumValue(VersionStrategyType.class, VERSION_STRATEGY_FIELD);
+        this.versionEnforcement = enumValue(VersionEnforcement.class, VERSION_ENFORCEMENT_FIELD);
+        this.versionConflictMode = enumValue(VersionConflictMode.class, VERSION_CONFLICT_MODE_FIELD);
         this.batchSize = config.getInteger(SinkConnectorConfig.BATCH_SIZE_FIELD);
         this.bulkSizeBytes = config.getLong(BULK_SIZE_BYTES_FIELD);
         this.lingerMs = config.getLong(LINGER_MS_FIELD);
@@ -1671,25 +1671,25 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
         // with the property named, rather than as a bare NumberFormatException from construction.
         this.maxRequestsPerSecond = config.hasKey(MAX_REQUESTS_PER_SECOND) ? parseDoubleOrNull(config.getString(MAX_REQUESTS_PER_SECOND_FIELD)) : null;
         this.maxBytesPerSecond = config.hasKey(MAX_BYTES_PER_SECOND) ? parseLongOrNull(config.getString(MAX_BYTES_PER_SECOND_FIELD)) : null;
-        this.decimalOutputMode = parse(DecimalOutputMode.class, config.getString(DECIMAL_OUTPUT_MODE_FIELD), DecimalOutputMode.NUMERIC);
-        this.temporalOutputMode = parse(TemporalOutputMode.class, config.getString(TEMPORAL_OUTPUT_MODE_FIELD), TemporalOutputMode.ISO8601);
-        this.intervalOutputMode = parse(IntervalOutputMode.class, config.getString(INTERVAL_OUTPUT_MODE_FIELD), IntervalOutputMode.STRING);
-        this.jsonOutputMode = parse(JsonOutputMode.class, config.getString(JSON_OUTPUT_MODE_FIELD), JsonOutputMode.OBJECT);
-        this.bitsOutputMode = parse(BitsOutputMode.class, config.getString(BITS_OUTPUT_MODE_FIELD), BitsOutputMode.BASE64);
-        this.binaryOutputMode = parse(BinaryOutputMode.class, config.getString(BINARY_OUTPUT_MODE_FIELD), BinaryOutputMode.BASE64);
-        this.geometryOutputMode = parse(GeometryOutputMode.class, config.getString(GEOMETRY_OUTPUT_MODE_FIELD), GeometryOutputMode.GEOJSON);
-        this.vectorOutputMode = parse(VectorOutputMode.class, config.getString(VECTOR_OUTPUT_MODE_FIELD), VectorOutputMode.ARRAY);
-        this.mapOutputMode = parse(MapOutputMode.class, config.getString(MAP_OUTPUT_MODE_FIELD), MapOutputMode.COMPACT);
-        this.nullValueHandling = parse(NullValueHandling.class, config.getString(NULL_VALUE_HANDLING_FIELD), NullValueHandling.OMIT);
-        this.fieldNameAdjustmentMode = parse(FieldNameAdjustmentMode.class, config.getString(FIELD_NAME_ADJUSTMENT_MODE_FIELD), FieldNameAdjustmentMode.NONE);
+        this.decimalOutputMode = enumValue(DecimalOutputMode.class, DECIMAL_OUTPUT_MODE_FIELD);
+        this.temporalOutputMode = enumValue(TemporalOutputMode.class, TEMPORAL_OUTPUT_MODE_FIELD);
+        this.intervalOutputMode = enumValue(IntervalOutputMode.class, INTERVAL_OUTPUT_MODE_FIELD);
+        this.jsonOutputMode = enumValue(JsonOutputMode.class, JSON_OUTPUT_MODE_FIELD);
+        this.bitsOutputMode = enumValue(BitsOutputMode.class, BITS_OUTPUT_MODE_FIELD);
+        this.binaryOutputMode = enumValue(BinaryOutputMode.class, BINARY_OUTPUT_MODE_FIELD);
+        this.geometryOutputMode = enumValue(GeometryOutputMode.class, GEOMETRY_OUTPUT_MODE_FIELD);
+        this.vectorOutputMode = enumValue(VectorOutputMode.class, VECTOR_OUTPUT_MODE_FIELD);
+        this.mapOutputMode = enumValue(MapOutputMode.class, MAP_OUTPUT_MODE_FIELD);
+        this.nullValueHandling = enumValue(NullValueHandling.class, NULL_VALUE_HANDLING_FIELD);
+        this.fieldNameAdjustmentMode = enumValue(FieldNameAdjustmentMode.class, FIELD_NAME_ADJUSTMENT_MODE_FIELD);
         this.fieldNameSeparatorReplacement = config.getString(FIELD_NAME_SEPARATOR_REPLACEMENT_FIELD);
-        this.mappingMode = parse(MappingMode.class, config.getString(MAPPING_MODE_FIELD), MappingMode.CREATE_IF_ABSENT);
-        this.mappingDynamic = parse(MappingDynamic.class, config.getString(MAPPING_DYNAMIC_FIELD), MappingDynamic.STRICT_BUT_DLQ);
+        this.mappingMode = enumValue(MappingMode.class, MAPPING_MODE_FIELD);
+        this.mappingDynamic = enumValue(MappingDynamic.class, MAPPING_DYNAMIC_FIELD);
         this.mappingComposedOf = Strings.listOf(config.getString(MAPPING_COMPOSED_OF_FIELD), s -> s.split(","), String::trim);
         this.mappingSettings = parseMappingSettings(config.getString(MAPPING_SETTINGS_FIELD));
-        this.stringMappingMode = parse(StringMappingMode.class, config.getString(STRING_MAPPING_MODE_FIELD), StringMappingMode.TEXT_WITH_KEYWORD);
-        this.structMappingMode = parse(StructMappingMode.class, config.getString(STRUCT_MAPPING_MODE_FIELD), StructMappingMode.OBJECT);
-        this.jsonMappingMode = parse(JsonMappingMode.class, config.getString(JSON_MAPPING_MODE_FIELD), JsonMappingMode.OBJECT);
+        this.stringMappingMode = enumValue(StringMappingMode.class, STRING_MAPPING_MODE_FIELD);
+        this.structMappingMode = enumValue(StructMappingMode.class, STRUCT_MAPPING_MODE_FIELD);
+        this.jsonMappingMode = enumValue(JsonMappingMode.class, JSON_MAPPING_MODE_FIELD);
         this.errorClassificationOverrides = parseClassificationOverrides(config.getString(ERROR_CLASSIFICATION_OVERRIDES_FIELD));
         this.logSensitiveData = config.getBoolean(LOG_SENSITIVE_DATA_FIELD);
         this.cloudEventsSchemaNamePattern = config.getString(SinkConnectorConfig.CLOUDEVENTS_SCHEMA_NAME_PATTERN_FIELD);
@@ -1796,7 +1796,7 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
                         PRIMARY_KEY_MODE, DELETE_ENABLED));
             }
             if (config.hasKey(WRITE_METHOD)) {
-                final WriteMethod explicit = parse(WriteMethod.class, config.getString(WRITE_METHOD_FIELD), WriteMethod.UPSERT);
+                final WriteMethod explicit = enumValue(WriteMethod.class, WRITE_METHOD_FIELD);
                 if (explicit.usesUpdateApi()) {
                     throw new ConnectException(String.format(
                             "'%s=none' cannot be combined with '%s=%s': there is no document identity to update.",
@@ -2039,13 +2039,13 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
 
     private AuthMode resolveAuthMode() {
         if (config.hasKey(CONNECTION_AUTH_MODE)) {
-            return parse(AuthMode.class, config.getString(CONNECTION_AUTH_MODE_FIELD), AuthMode.NONE);
+            return EnumeratedValue.parse(AuthMode.class, config.getString(CONNECTION_AUTH_MODE_FIELD), AuthMode.NONE.getValue());
         }
         return config.hasKey(CONNECTION_USERNAME) || config.hasKey(CONNECTION_PASSWORD) ? AuthMode.BASIC : AuthMode.NONE;
     }
 
     private WriteMethod resolveWriteMethod() {
-        final WriteMethod configured = parse(WriteMethod.class, config.getString(WRITE_METHOD_FIELD), WriteMethod.UPSERT);
+        final WriteMethod configured = enumValue(WriteMethod.class, WRITE_METHOD_FIELD);
         if (primaryKeyMode == PrimaryKeyMode.NONE && !config.hasKey(WRITE_METHOD) && configured.usesUpdateApi()) {
             startupWarnings.add(String.format(
                     "'%s' resolved to 'create' because '%s' is 'none' and the default '%s' requires a document identity.",
@@ -2089,7 +2089,7 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
         }
         final EnumSet<MetadataField> result = EnumSet.noneOf(MetadataField.class);
         for (String entry : value.split(",")) {
-            final MetadataField field = parse(MetadataField.class, entry.trim(), null);
+            final MetadataField field = EnumeratedValue.parse(MetadataField.class, entry);
             if (field == null) {
                 throw new ConnectException(String.format(
                         "'%s' contains unknown metadata field '%s'; allowed values are %s.",
@@ -2110,7 +2110,7 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
                         "'%s' key '%s' is not a writable envelope operation; allowed keys are 'c', 'r', 'u'.",
                         WRITE_METHOD_PER_OPERATION, entry.getKey()));
             }
-            final WriteMethod method = parse(WriteMethod.class, entry.getValue(), null);
+            final WriteMethod method = EnumeratedValue.parse(WriteMethod.class, entry.getValue());
             if (method == null) {
                 throw new ConnectException(String.format(
                         "'%s' maps operation '%s' to unknown write method '%s'.",
@@ -2188,16 +2188,11 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
         }
     }
 
-    private static <T extends Enum<T> & EnumeratedValue> T parse(Class<T> type, String value, T defaultValue) {
-        if (Strings.isNullOrBlank(value)) {
-            return defaultValue;
-        }
-        for (T option : type.getEnumConstants()) {
-            if (option.getValue().equalsIgnoreCase(value.trim())) {
-                return option;
-            }
-        }
-        return defaultValue;
+    /**
+     * The configured enum option for a field, or the field's declared default when it is absent.
+     */
+    private <T extends Enum<T> & EnumeratedValue> T enumValue(Class<T> type, Field field) {
+        return EnumeratedValue.parse(type, config.getString(field), field.defaultValueAsString());
     }
 
     /**
@@ -2273,11 +2268,11 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
     }
 
     public ApiCompatibilityMode apiCompatibilityMode() {
-        return parse(ApiCompatibilityMode.class, config.getString(CONNECTION_API_COMPATIBILITY_MODE_FIELD), ApiCompatibilityMode.AUTO);
+        return enumValue(ApiCompatibilityMode.class, CONNECTION_API_COMPATIBILITY_MODE_FIELD);
     }
 
     public TlsVerificationMode tlsVerificationMode() {
-        return parse(TlsVerificationMode.class, config.getString(CONNECTION_TLS_VERIFICATION_MODE_FIELD), TlsVerificationMode.FULL);
+        return enumValue(TlsVerificationMode.class, CONNECTION_TLS_VERIFICATION_MODE_FIELD);
     }
 
     public String tlsKeystoreLocation() {
