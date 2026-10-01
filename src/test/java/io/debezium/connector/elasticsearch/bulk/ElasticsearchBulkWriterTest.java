@@ -36,8 +36,8 @@ import io.debezium.metadata.CollectionId;
 import io.debezium.sink.DebeziumSinkRecord;
 import io.debezium.sink.SinkConnectorConfig;
 import io.debezium.sink.batch.BatchRecord;
-import io.debezium.util.Clock;
 import io.debezium.util.DelayStrategy;
+import io.debezium.util.MockClock;
 
 import co.elastic.clients.elasticsearch.core.bulk.BulkOperation;
 
@@ -57,8 +57,7 @@ public class ElasticsearchBulkWriterTest {
     private final List<DebeziumSinkRecord> reported = new ArrayList<>();
     private final List<String> reportedMessages = new ArrayList<>();
     private final List<Long> pauses = new ArrayList<>();
-    private final long[] now = { 1_000_000L };
-    private final Clock clock = () -> now[0];
+    private final MockClock clock = new MockClock(1_000_000L);
 
     private StubElasticsearch stub;
     private ElasticsearchSinkConnectorMetrics metrics;
@@ -348,7 +347,7 @@ public class ElasticsearchBulkWriterTest {
         final Supplier<DelayStrategy> backoffs = () -> criteria -> {
             if (criteria) {
                 pauses.add(config.retryBackoffMs());
-                now[0] += config.retryBackoffMs();
+                clock.increment(config.retryBackoffMs());
             }
             return criteria;
         };
