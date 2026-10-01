@@ -121,6 +121,12 @@
     <dependency>
       <groupId>io.debezium</groupId>
       <artifactId>debezium-util</artifactId>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.debezium</groupId>
+      <artifactId>debezium-util</artifactId>
     </dependency>
     <dependency>
       <groupId>io.debezium</groupId>
