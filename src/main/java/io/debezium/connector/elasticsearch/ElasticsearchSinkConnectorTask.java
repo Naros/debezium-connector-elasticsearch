@@ -227,6 +227,16 @@ public class ElasticsearchSinkConnectorTask extends SinkTask {
         }
     }
 
+    /**
+     * The failure recorded by the most recent {@link #put(Collection)}, or {@code null} when the last
+     * batch was written successfully. Runtime adapters that do not re-enter {@code put} after a
+     * failure, such as the Debezium Server change consumer, read it to decide whether the batch may
+     * be committed. The next call to {@code put} rethrows it; {@link #stop()} clears it.
+     */
+    public Throwable getLastProcessingException() {
+        return previousPutException;
+    }
+
     private void closeResources() {
         if (metrics != null) {
             metrics.unregister();
