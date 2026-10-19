@@ -5,6 +5,8 @@
  */
 package io.debezium.connector.elasticsearch.record;
 
+import java.util.function.Function;
+
 import org.apache.kafka.connect.data.Struct;
 
 import io.debezium.bindings.kafka.KafkaDebeziumSinkRecord;
@@ -33,10 +35,19 @@ public class RecordAdapter {
     private static final String FLATTENED_DELETED_FIELD = "__deleted";
     private static final String FLATTENED_OP_FIELD = "__op";
 
-    private final ElasticsearchSinkConnectorConfig config;
+    private final Function<DebeziumSinkRecord, SinkOperation> adapter;
+    private final TombstoneMode tombstoneMode;
 
     public RecordAdapter(ElasticsearchSinkConnectorConfig config) {
-        this.config = config;
+        this.adapter = switch (config.eventFormat()) {
+            case PLAIN -> this::adaptPlain;
+            case DEBEZIUM -> record -> adaptDebezium(record, true);
+            case AUTO -> record -> adaptDebezium(record, false);
+        };
+
+        this.tombstoneMode = config.tombstoneMode() == TombstoneMode.AUTO
+                ? TombstoneMode.DELETE
+                : config.tombstoneMode();
     }
 
     /**
@@ -46,11 +57,7 @@ public class RecordAdapter {
      *         the error reporter
      */
     public SinkOperation adapt(DebeziumSinkRecord record) {
-        return switch (config.eventFormat()) {
-            case PLAIN -> adaptPlain(record);
-            case DEBEZIUM -> adaptDebezium(record, true);
-            case AUTO -> adaptDebezium(record, false);
-        };
+        return adapter.apply(record);
     }
 
     private SinkOperation adaptDebezium(DebeziumSinkRecord record, boolean required) {
@@ -129,23 +136,22 @@ public class RecordAdapter {
     }
 
     private SinkOperation adaptTombstone(DebeziumSinkRecord record) {
-        final TombstoneMode mode = config.tombstoneMode() == TombstoneMode.AUTO ? TombstoneMode.DELETE : config.tombstoneMode();
         if (record.key() == null) {
             // With no key there is nothing to act on; fail by default regardless of mode.
-            if (mode == TombstoneMode.IGNORE) {
+            if (tombstoneMode == TombstoneMode.IGNORE) {
                 return new SinkOperation.Skip(record, "tombstone with null key");
             }
             throw new RecordProcessingException(String.format(
                     "Tombstone with a null key at topic '%s' partition %s offset %s: there is nothing to act on.",
                     record.topicName(), record.partition(), record.offset()));
         }
-        return switch (mode) {
+        return switch (tombstoneMode) {
             case IGNORE -> new SinkOperation.Skip(record, "tombstone (mode 'ignore')");
             case DELETE -> new SinkOperation.Delete(record);
             case FAIL -> throw new RecordProcessingException(String.format(
                     "Tombstone at topic '%s' partition %s offset %s and '%s' is 'fail'.",
                     record.topicName(), record.partition(), record.offset(), ElasticsearchSinkConnectorConfig.TOMBSTONE_MODE));
-            case AUTO -> throw new IllegalStateException("'auto' is resolved to 'delete' before this switch");
+            case AUTO -> throw new IllegalStateException("'auto' is resolved to 'delete' in the constructor");
         };
     }
 
