@@ -13,6 +13,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
@@ -41,11 +42,20 @@ public class DocumentIdStrategy {
     private final PrimaryKeyMode mode;
     private final Set<String> keyFields;
     private final String separator;
+    private final Function<DebeziumSinkRecord, String> resolver;
 
     public DocumentIdStrategy(ElasticsearchSinkConnectorConfig config) {
         this.mode = config.getPrimaryKeyMode();
         this.keyFields = config.getPrimaryKeyFields();
         this.separator = config.documentIdSeparator();
+
+        this.resolver = switch (mode) {
+            case NONE -> record -> null;
+            case KAFKA -> this::fromKafkaCoordinates;
+            case RECORD_KEY -> this::fromRecordKey;
+            case RECORD_VALUE -> record -> fromStruct(record, record.getPayload(), "record value");
+            case RECORD_HEADER -> record -> fromStruct(record, headerStruct(record), "record headers");
+        };
     }
 
     /**
@@ -55,16 +65,10 @@ public class DocumentIdStrategy {
      * @throws RecordProcessingException on a null or oversized id
      */
     public Optional<String> documentId(DebeziumSinkRecord record) {
-        final String id = switch (mode) {
-            case NONE -> null;
-            case KAFKA -> record.topicName() + separator + record.partition() + separator + record.offset();
-            case RECORD_KEY -> fromRecordKey(record);
-            case RECORD_VALUE -> fromStruct(record, record.getPayload(), "record value");
-            case RECORD_HEADER -> fromStruct(record, headerStruct(record), "record headers");
-        };
         if (mode == PrimaryKeyMode.NONE) {
             return Optional.empty();
         }
+        final String id = resolver.apply(record);
         if (id == null) {
             throw new RecordProcessingException(String.format(
                     "The document id resolved to null under '%s=%s' for record at topic '%s' partition %s offset %s.",
@@ -79,6 +83,10 @@ public class DocumentIdStrategy {
                     record.topicName(), record.partition(), record.offset(), length, MAX_ID_BYTES));
         }
         return Optional.of(id);
+    }
+
+    private String fromKafkaCoordinates(DebeziumSinkRecord record) {
+        return record.topicName() + separator + record.partition() + separator + record.offset();
     }
 
     private String fromRecordKey(DebeziumSinkRecord record) {
