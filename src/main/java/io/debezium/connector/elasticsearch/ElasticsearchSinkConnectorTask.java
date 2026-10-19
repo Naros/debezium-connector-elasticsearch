@@ -278,16 +278,16 @@ public class ElasticsearchSinkConnectorTask extends SinkTask {
     private String getOriginalTopicName(SinkRecord record) {
         // DBZ-6491: resolve the original broker topic name; SinkRecord#topic may have been
         // mutated by SMTs.
-        if (record instanceof InternalSinkRecord) {
+        if (record instanceof InternalSinkRecord internalRecord) {
             if (usePre380OriginalRecordAccess) {
                 try {
-                    return ((ConsumerRecord<byte[], byte[]>) pre380OriginalRecordMethod.invoke(record, (Object[]) EMPTY_CLASS_ARRAY)).topic();
+                    return ((ConsumerRecord<byte[], byte[]>) pre380OriginalRecordMethod.invoke(internalRecord, (Object[]) EMPTY_CLASS_ARRAY)).topic();
                 }
                 catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
                     throw new DebeziumException("Failed to access original record data", e);
                 }
             }
-            return ((InternalSinkRecord) record).context().original().topic();
+            return internalRecord.context().original().topic();
         }
         try {
             // KIP-793 (Kafka 3.6): the pre-transformation topic is on the record itself.
