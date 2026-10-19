@@ -151,13 +151,6 @@ public class ElasticsearchChangeEventSink extends AbstractChangeEventSink {
         final List<BulkItem> items = new ArrayList<>();
         for (BatchRecord batchRecord : batch) {
             final DebeziumSinkRecord record = batchRecord.record();
-            if (record.isTruncate()) {
-                // DDD-61 5.1 sequencing: drain the in-flight work, then execute the truncate to
-                // completion, and only then build the next bulk request.
-                writeItems(items);
-                executeTruncate(batchRecord);
-                continue;
-            }
             try {
                 final SinkOperation operation = recordAdapter.adapt(record);
                 if (operation instanceof SinkOperation.Skip skip) {
@@ -177,6 +170,8 @@ public class ElasticsearchChangeEventSink extends AbstractChangeEventSink {
                     items.add(buildWrite(batchRecord, write));
                 }
                 else if (operation instanceof SinkOperation.Truncate) {
+                    // DDD-61 5.1 sequencing: drain the in-flight work, then execute the truncate to
+                    // completion, and only then build the next bulk request.
                     writeItems(items);
                     executeTruncate(batchRecord);
                 }
