@@ -61,6 +61,13 @@ public class KerberosAuthentication {
     static final long RELOGIN_MARGIN_MS = Duration.ofMinutes(5).toMillis();
 
     /**
+     * The least time between a login and a failure-driven login, so that a persistent failure
+     * unrelated to the ticket, such as an unregistered service principal, does not log in to
+     * the KDC on every request.
+     */
+    static final long FAILURE_RELOGIN_COOLDOWN_MS = Duration.ofMinutes(1).toMillis();
+
+    /**
      * Produces a SPNEGO token for the given host under the given subject.
      */
     @FunctionalInterface
@@ -74,6 +81,7 @@ public class KerberosAuthentication {
 
     private volatile Subject subject;
     private volatile long ticketEndTimeMs;
+    private volatile long lastLoginMs;
 
     public KerberosAuthentication(String principal, String keytabPath) {
         this(() -> keytabLogin(principal, keytabPath), KerberosAuthentication::gssToken, Clock.system());
@@ -101,23 +109,41 @@ public class KerberosAuthentication {
     }
 
     String negotiateToken(String host) {
+        final Subject used = currentSubject();
         try {
-            return tokens.token(currentSubject(), host);
+            return tokens.token(used, host);
         }
         catch (Exception first) {
-            // A ticket can be invalidated before its end time, so one forced login and retry
-            // precede giving up; a second failure is reported with the retry's cause.
-            LOGGER.warn("Kerberos SPNEGO token for host {} could not be obtained, logging in again: {}", host, first.getMessage());
-            synchronized (this) {
-                login();
-            }
+            final Subject retryWith = subjectForRetry(used, host, first);
             try {
-                return tokens.token(subject, host);
+                return tokens.token(retryWith, host);
             }
             catch (Exception second) {
-                throw new DebeziumException("Failed to obtain a Kerberos SPNEGO token for host " + host, second);
+                throw tokenFailure(host, second);
             }
         }
+    }
+
+    /**
+     * A ticket can be invalidated before its end time, so a failed token attempt is retried once
+     * under a fresh login. A login another request performed in the meantime is reused as is,
+     * and no login follows within {@link #FAILURE_RELOGIN_COOLDOWN_MS} of the last one, in which
+     * case the failure stands.
+     */
+    private synchronized Subject subjectForRetry(Subject used, String host, Exception failure) {
+        if (subject != used) {
+            return subject;
+        }
+        if (clock.currentTimeInMillis() - lastLoginMs < FAILURE_RELOGIN_COOLDOWN_MS) {
+            throw tokenFailure(host, failure);
+        }
+        LOGGER.warn("Kerberos SPNEGO token for host {} could not be obtained, logging in again: {}", host, failure.getMessage());
+        login();
+        return subject;
+    }
+
+    private static DebeziumException tokenFailure(String host, Exception cause) {
+        return new DebeziumException("Failed to obtain a Kerberos SPNEGO token for host " + host, cause);
     }
 
     /**
@@ -143,6 +169,7 @@ public class KerberosAuthentication {
     private synchronized void login() {
         final Subject fresh = login.get();
         this.ticketEndTimeMs = ticketEndTime(fresh);
+        this.lastLoginMs = clock.currentTimeInMillis();
         this.subject = fresh;
     }
 
