@@ -21,10 +21,15 @@ import javax.security.auth.Subject;
 import javax.security.auth.kerberos.KerberosPrincipal;
 import javax.security.auth.kerberos.KerberosTicket;
 
+import org.apache.http.HttpHost;
+import org.elasticsearch.client.Request;
+import org.elasticsearch.client.Response;
+import org.elasticsearch.client.RestClient;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import io.debezium.DebeziumException;
+import io.debezium.connector.elasticsearch.util.StubElasticsearch;
 import io.debezium.util.MockClock;
 
 /**
@@ -197,6 +202,33 @@ public class KerberosAuthenticationTest {
         assertThat(auth.negotiateToken(HOST)).isEqualTo("token-2");
 
         assertThat(logins).hasSize(2);
+    }
+
+    @Test
+    void shouldFailOnlyTheRequestWhoseTokenFailsAndKeepTheClientUsable() throws Exception {
+        final AtomicInteger attempts = new AtomicInteger();
+        final KerberosAuthentication auth = authentication(this::login, (subject, host) -> {
+            if (attempts.incrementAndGet() == 1) {
+                throw new IllegalStateException("service principal not registered");
+            }
+            return "dG9rZW4=";
+        });
+
+        try (StubElasticsearch stub = new StubElasticsearch();
+                RestClient client = RestClient.builder(HttpHost.create(stub.url())).setHttpClientConfigCallback(auth::apply).build()) {
+            // Inside the cooldown, so the interceptor throws its unchecked exception at once.
+            assertThatThrownBy(() -> client.performRequest(new Request("GET", "/")))
+                    .hasRootCauseMessage("service principal not registered");
+            assertThat(stub.requests()).isEmpty();
+
+            // The exception fails its own exchange only: the client's I/O reactor is still
+            // running, so the next request goes through with the negotiated header attached.
+            final Response response = client.performRequest(new Request("GET", "/"));
+
+            assertThat(response.getStatusLine().getStatusCode()).isEqualTo(200);
+            assertThat(stub.requests()).hasSize(1);
+            assertThat(stub.requests().get(0).headers().get("authorization")).containsExactly("Negotiate dG9rZW4=");
+        }
     }
 
     /**
