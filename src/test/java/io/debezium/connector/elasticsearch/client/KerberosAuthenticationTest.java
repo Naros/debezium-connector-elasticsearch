@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import javax.security.auth.Subject;
@@ -92,6 +93,7 @@ public class KerberosAuthenticationTest {
             }
             return "retried";
         });
+        clock.increment(KerberosAuthentication.FAILURE_RELOGIN_COOLDOWN_MS);
 
         assertThat(auth.negotiateToken(HOST)).isEqualTo("retried");
 
@@ -104,6 +106,7 @@ public class KerberosAuthenticationTest {
         final KerberosAuthentication auth = authentication(this::login, (subject, host) -> {
             throw new IllegalStateException("kdc unreachable");
         });
+        clock.increment(KerberosAuthentication.FAILURE_RELOGIN_COOLDOWN_MS);
 
         assertThatThrownBy(() -> auth.negotiateToken(HOST))
                 .isInstanceOf(DebeziumException.class)
@@ -111,6 +114,49 @@ public class KerberosAuthenticationTest {
                 .hasRootCauseMessage("kdc unreachable");
 
         assertThat(logins).hasSize(2);
+    }
+
+    @Test
+    void shouldNotLogInAgainWithinTheCooldownOfTheLastLogin() {
+        final AtomicInteger attempts = new AtomicInteger();
+        final KerberosAuthentication auth = authentication(this::login, (subject, host) -> {
+            attempts.incrementAndGet();
+            throw new IllegalStateException("service principal not registered");
+        });
+        clock.increment(KerberosAuthentication.FAILURE_RELOGIN_COOLDOWN_MS - 1);
+
+        // A failure right after a login is almost certainly not the ticket, so the failure
+        // stands without a login or a retry.
+        assertThatThrownBy(() -> auth.negotiateToken(HOST))
+                .isInstanceOf(DebeziumException.class)
+                .hasMessageContaining(HOST)
+                .hasRootCauseMessage("service principal not registered");
+
+        assertThat(logins).hasSize(1);
+        assertThat(attempts).hasValue(1);
+    }
+
+    @Test
+    void shouldRetryWithALoginAnotherRequestPerformedInsteadOfLoggingInAgain() {
+        final AtomicReference<KerberosAuthentication> ref = new AtomicReference<>();
+        final AtomicInteger attempts = new AtomicInteger();
+        final KerberosAuthentication auth = authentication(this::login, (subject, host) -> {
+            tokenSubjects.add(subject);
+            if (attempts.incrementAndGet() == 1) {
+                // Another request reaches the margin and refreshes the subject while this
+                // attempt is in flight with the old one.
+                clock.increment(TICKET_LIFETIME_MS);
+                ref.get().currentSubject();
+                throw new IllegalStateException("ticket invalidated");
+            }
+            return "retried";
+        });
+        ref.set(auth);
+
+        assertThat(auth.negotiateToken(HOST)).isEqualTo("retried");
+
+        assertThat(logins).hasSize(2);
+        assertThat(tokenSubjects).containsExactly(logins.get(0), logins.get(1));
     }
 
     @Test
