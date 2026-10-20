@@ -23,6 +23,8 @@
     <version.elasticsearch.java>8.19.21</version.elasticsearch.java>
     <version.elasticsearch.rest.client>8.19.21</version.elasticsearch.rest.client>
     <version.testcontainers.elasticsearch>2.0.3</version.testcontainers.elasticsearch>
+    <!-- In-process KDC for the Kerberos tests -->
+    <version.kerby>2.1.2</version.kerby>
 
     <!-- Testing -->
     <test.tags>all</test.tags>
@@ -52,6 +54,11 @@
         <groupId>org.testcontainers</groupId>
         <artifactId>testcontainers-elasticsearch</artifactId>
         <version>${version.testcontainers.elasticsearch}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.kerby</groupId>
+        <artifactId>kerb-simplekdc</artifactId>
+        <version>${version.kerby}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
@@ -168,6 +175,11 @@
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers-elasticsearch</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.kerby</groupId>
+      <artifactId>kerb-simplekdc</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
