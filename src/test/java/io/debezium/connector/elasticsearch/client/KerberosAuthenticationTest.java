@@ -42,6 +42,7 @@ public class KerberosAuthenticationTest {
 
     private final MockClock clock = new MockClock(START_MS);
     private final List<Subject> logins = new ArrayList<>();
+    private final List<Subject> logouts = new ArrayList<>();
     private final List<Subject> tokenSubjects = new ArrayList<>();
 
     @Test
@@ -53,6 +54,7 @@ public class KerberosAuthenticationTest {
         assertThat(auth.negotiateToken(HOST)).isEqualTo("token-1");
 
         assertThat(logins).hasSize(1);
+        assertThat(logouts).isEmpty();
         assertThat(tokenSubjects).containsExactly(logins.get(0), logins.get(0));
     }
 
@@ -65,6 +67,7 @@ public class KerberosAuthenticationTest {
         assertThat(auth.negotiateToken(HOST)).isEqualTo("token-2");
 
         assertThat(logins).hasSize(2);
+        assertThat(logouts).containsExactly(logins.get(0));
         assertThat(tokenSubjects).containsExactly(logins.get(0), logins.get(1));
     }
 
@@ -183,8 +186,27 @@ public class KerberosAuthenticationTest {
                 .hasMessage("Kerberos login failed");
     }
 
+    @Test
+    void shouldKeepTheNewLoginWhenLoggingOutThePreviousOneFails() {
+        final KerberosAuthentication auth = new KerberosAuthentication(() -> new KerberosAuthentication.Login(login(), () -> {
+            throw new IllegalStateException("logout failed");
+        }), this::token, clock);
+        auth.negotiateToken(HOST);
+
+        clock.increment(TICKET_LIFETIME_MS);
+        assertThat(auth.negotiateToken(HOST)).isEqualTo("token-2");
+
+        assertThat(logins).hasSize(2);
+    }
+
+    /**
+     * Wraps each subject the login yields so that its logout is recorded in {@link #logouts}.
+     */
     private KerberosAuthentication authentication(Supplier<Subject> login, KerberosAuthentication.TokenSource tokens) {
-        return new KerberosAuthentication(login, tokens, clock);
+        return new KerberosAuthentication(() -> {
+            final Subject subject = login.get();
+            return new KerberosAuthentication.Login(subject, () -> logouts.add(subject));
+        }, tokens, clock);
     }
 
     /**
