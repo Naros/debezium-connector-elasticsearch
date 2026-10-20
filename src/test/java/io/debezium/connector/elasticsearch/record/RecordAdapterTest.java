@@ -228,6 +228,19 @@ public class RecordAdapterTest {
         assertThat(write.payload().schema().name()).isEqualTo(TOPIC + ".Envelope");
     }
 
+    @Test
+    void shouldTreatTruncateEnvelopeAsOpaqueBodyUnderPlainFormat() {
+        // The sink no longer intercepts truncates ahead of the adapter, so under 'plain' a
+        // truncate envelope is an ordinary document like any other envelope-shaped value.
+        final SinkOperation result = adapter(Map.of("event.format", "plain")).adapt(record(envelope(Envelope.Operation.TRUNCATE)));
+
+        assertThat(result).isInstanceOf(SinkOperation.Write.class);
+        final SinkOperation.Write write = (SinkOperation.Write) result;
+        assertThat(write.operation()).isNull();
+        assertThat(write.payload().schema().name()).isEqualTo(TOPIC + ".Envelope");
+        assertThat(write.payload().getString(Envelope.FieldName.OPERATION)).isEqualTo(Envelope.Operation.TRUNCATE.code());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = { "auto", "delete" })
     void shouldDeleteOnTombstone(String mode) {
