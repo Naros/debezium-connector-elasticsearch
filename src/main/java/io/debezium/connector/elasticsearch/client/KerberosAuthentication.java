@@ -16,6 +16,7 @@ import javax.security.auth.kerberos.KerberosTicket;
 import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.auth.login.Configuration;
 import javax.security.auth.login.LoginContext;
+import javax.security.auth.login.LoginException;
 
 import org.apache.http.HttpHost;
 import org.apache.http.HttpRequestInterceptor;
@@ -75,13 +76,21 @@ public class KerberosAuthentication {
         String token(Subject subject, String host) throws Exception;
     }
 
-    private final Supplier<Subject> login;
+    /**
+     * An authenticated subject with the means to release its credentials once a later login has
+     * replaced it.
+     */
+    record Login(Subject subject, Runnable logout) {
+    }
+
+    private final Supplier<Login> login;
     private final TokenSource tokens;
     private final Clock clock;
 
     private volatile Subject subject;
     private volatile long ticketEndTimeMs;
     private volatile long lastLoginMs;
+    private Runnable logout;
 
     public KerberosAuthentication(String principal, String keytabPath) {
         this(() -> keytabLogin(principal, keytabPath), KerberosAuthentication::gssToken, Clock.system());
@@ -91,7 +100,7 @@ public class KerberosAuthentication {
      * The login yields a freshly authenticated subject and the token source performs the GSS
      * exchange; both are injectable so that the renewal policy can be exercised without a KDC.
      */
-    KerberosAuthentication(Supplier<Subject> login, TokenSource tokens, Clock clock) {
+    KerberosAuthentication(Supplier<Login> login, TokenSource tokens, Clock clock) {
         this.login = login;
         this.tokens = tokens;
         this.clock = clock;
@@ -167,10 +176,22 @@ public class KerberosAuthentication {
     }
 
     private synchronized void login() {
-        final Subject fresh = login.get();
-        this.ticketEndTimeMs = ticketEndTime(fresh);
+        final Login fresh = login.get();
+        final Runnable previous = this.logout;
+        this.ticketEndTimeMs = ticketEndTime(fresh.subject());
         this.lastLoginMs = clock.currentTimeInMillis();
-        this.subject = fresh;
+        this.subject = fresh.subject();
+        this.logout = fresh.logout();
+        if (previous != null) {
+            // Release the replaced credentials now rather than at the next collection. A request
+            // still holding the old subject fails once and retries with the new one.
+            try {
+                previous.run();
+            }
+            catch (RuntimeException e) {
+                LOGGER.debug("Logging out the previous Kerberos login failed", e);
+            }
+        }
     }
 
     /**
@@ -187,12 +208,19 @@ public class KerberosAuthentication {
         return endTimeMs;
     }
 
-    private static Subject keytabLogin(String principal, String keytabPath) {
+    private static Login keytabLogin(String principal, String keytabPath) {
         try {
             final LoginContext context = new LoginContext(LOGIN_CONTEXT_NAME, null, null,
                     keytabConfiguration(principal, keytabPath));
             context.login();
-            return context.getSubject();
+            return new Login(context.getSubject(), () -> {
+                try {
+                    context.logout();
+                }
+                catch (LoginException e) {
+                    LOGGER.debug("Logging out the previous Kerberos login failed", e);
+                }
+            });
         }
         catch (Exception e) {
             throw new DebeziumException(String.format(
