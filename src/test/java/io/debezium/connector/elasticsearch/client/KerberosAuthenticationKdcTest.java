@@ -35,6 +35,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import io.debezium.DebeziumException;
 import io.debezium.connector.elasticsearch.util.StubElasticsearch;
@@ -42,10 +43,15 @@ import io.debezium.connector.elasticsearch.util.StubElasticsearch;
 /**
  * Exercises the real keytab login and SPNEGO exchange against an in-process KDC: the token the
  * connector attaches is accepted under the service principal the KDC issued it for.
+ * <p>
+ * The KDC configuration is JVM-wide state: {@code java.security.krb5.conf} and the Kerberos
+ * configuration JGSS caches from it. The class is therefore isolated from any parallel test
+ * execution, and restores the property when it is done.
  *
  * @author Chris Cranford
  */
 @Tag("UnitTests")
+@Isolated("Sets java.security.krb5.conf for the JVM")
 public class KerberosAuthenticationKdcTest {
 
     private static final String REALM = "EXAMPLE.COM";
@@ -64,7 +70,9 @@ public class KerberosAuthenticationKdcTest {
         previousKrb5Conf = System.getProperty("java.security.krb5.conf");
         workDir = Files.createTempDirectory("debezium-kdc").toFile();
         // JGSS canonicalizes host-based service names, so the service principal is registered
-        // under the name the resolver will produce for the loopback host.
+        // under the name the resolver produces for the loopback host. The token request and the
+        // principal both derive from this one lookup, so the test does not depend on what the
+        // machine calls localhost.
         serviceHost = InetAddress.getByName("localhost").getCanonicalHostName();
 
         kdc = new SimpleKdcServer();
@@ -76,6 +84,10 @@ public class KerberosAuthenticationKdcTest {
         kdc.setWorkDir(workDir);
         kdc.init();
         kdc.start();
+        // Kerby writes krb5.conf into the work directory and points java.security.krb5.conf at
+        // it during init(); it is set here as well so the test does not rest on that side
+        // effect. The login module's 'refreshKrb5Config' makes JGSS re-read it on login.
+        System.setProperty("java.security.krb5.conf", new File(workDir, "krb5.conf").getAbsolutePath());
 
         clientKeytab = new File(workDir, "client.keytab");
         serviceKeytab = new File(workDir, "service.keytab");
