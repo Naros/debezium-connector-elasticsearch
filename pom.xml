@@ -52,7 +52,6 @@
         <groupId>org.testcontainers</groupId>
         <artifactId>testcontainers-elasticsearch</artifactId>
         <version>${version.testcontainers.elasticsearch}</version>
-        <scope>test</scope>
       </dependency>
     </dependencies>
   </dependencyManagement>
