@@ -21,7 +21,7 @@
          Elasticsearch 8.x natively and 9.x via REST API compatibility headers; a 9.x client
          cannot address an 8.x cluster. -->
     <version.elasticsearch.java>8.19.21</version.elasticsearch.java>
-    <version.elasticsearch.rest.client>8.19.20</version.elasticsearch.rest.client>
+    <version.elasticsearch.rest.client>8.19.21</version.elasticsearch.rest.client>
     <version.testcontainers.elasticsearch>2.0.3</version.testcontainers.elasticsearch>
 
     <!-- Testing -->
