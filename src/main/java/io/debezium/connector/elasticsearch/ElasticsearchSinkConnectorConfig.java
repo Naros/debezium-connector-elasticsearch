@@ -1520,7 +1520,7 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
                     VERSION_ENFORCEMENT_FIELD,
                     VERSION_CONFLICT_MODE_FIELD,
                     SinkConnectorConfig.BATCH_SIZE_FIELD,
-                    SinkConnectorConfig.KEYED_MESSAGE_BATCH_MODE_FIELD,
+                    SinkConnectorConfig.BUFFER_MODE_FIELD,
                     BULK_SIZE_BYTES_FIELD,
                     LINGER_MS_FIELD,
                     FLUSH_TIMEOUT_MS_FIELD,
@@ -1834,12 +1834,12 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
     }
 
     private void validateWritesAndTruncate() {
-        if (KeyedMessageBatchMode.PASSTHROUGH == KeyedMessageBatchMode.parse(config.getString(SinkConnectorConfig.KEYED_MESSAGE_BATCH_MODE_FIELD))) {
+        if (BufferMode.PASSTHROUGH == BufferMode.parse(config.getString(SinkConnectorConfig.BUFFER_MODE_FIELD))) {
             throw new ConnectException(String.format(
                     "'%s=passthrough' is not supported by the Elasticsearch sink: batch reduction to one write per document id "
                             + "is part of the ordering correctness argument, not an optimization. Remove the property or set it "
                             + "to 'deduplication'.",
-                    SinkConnectorConfig.KEYED_MESSAGE_BATCH_MODE));
+                    SinkConnectorConfig.BUFFER_MODE));
         }
 
         // truncate.mode governs; the shared truncate.enabled is derived from it and an explicit
@@ -2551,10 +2551,10 @@ public class ElasticsearchSinkConnectorConfig implements SinkConnectorConfig {
     }
 
     @Override
-    public KeyedMessageBatchMode getKeyedMessageBatchMode() {
+    public BufferMode getBufferMode() {
         // Fixed to deduplication: reduction to one write per document id is part of the ordering
         // correctness argument (DDD-61 7.2); an explicit 'passthrough' is rejected in validate().
-        return KeyedMessageBatchMode.DEDUPLICATION;
+        return BufferMode.DEDUPLICATION;
     }
 
     @Override

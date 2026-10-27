@@ -30,8 +30,8 @@ import static io.debezium.connector.elasticsearch.ElasticsearchSinkConnectorConf
 import static io.debezium.connector.elasticsearch.ElasticsearchSinkConnectorConfig.VERSION_STRATEGY;
 import static io.debezium.connector.elasticsearch.ElasticsearchSinkConnectorConfig.WRITE_METHOD;
 import static io.debezium.connector.elasticsearch.ElasticsearchSinkConnectorConfig.WRITE_METHOD_PER_OPERATION;
+import static io.debezium.sink.SinkConnectorConfig.BUFFER_MODE;
 import static io.debezium.sink.SinkConnectorConfig.DELETE_ENABLED;
-import static io.debezium.sink.SinkConnectorConfig.KEYED_MESSAGE_BATCH_MODE;
 import static io.debezium.sink.SinkConnectorConfig.PRIMARY_KEY_FIELDS;
 import static io.debezium.sink.SinkConnectorConfig.PRIMARY_KEY_MODE;
 import static io.debezium.sink.SinkConnectorConfig.TRUNCATE_ENABLED;
@@ -103,8 +103,8 @@ public class ElasticsearchSinkConnectorConfigTest {
                         new String[]{ DOCUMENT_ID_NON_KEY_ORDERING, VERSION_STRATEGY }),
                 Arguments.of("external versioning with the update api", with(VERSION_ENFORCEMENT, "external"),
                         new String[]{ VERSION_ENFORCEMENT, WRITE_METHOD }),
-                Arguments.of("passthrough batching", with(KEYED_MESSAGE_BATCH_MODE, "passthrough"),
-                        new String[]{ KEYED_MESSAGE_BATCH_MODE }),
+                Arguments.of("passthrough batching", with(BUFFER_MODE, "passthrough"),
+                        new String[]{ BUFFER_MODE }),
                 Arguments.of("truncate.enabled contradicting the default mode", with(TRUNCATE_ENABLED, "true"),
                         new String[]{ TRUNCATE_ENABLED, TRUNCATE_MODE }),
                 Arguments.of("truncate.enabled contradicting an explicit mode",
@@ -228,7 +228,7 @@ public class ElasticsearchSinkConnectorConfigTest {
                 Arguments.of("acknowledged wildcard",
                         with(TRUNCATE_MODE, "delete_by_query", TRUNCATE_ALLOWED_RESOURCES, "*", TRUNCATE_ALLOW_WILDCARD, "true")),
                 Arguments.of("truncate.enabled agreeing with the mode", with(TRUNCATE_ENABLED, "true", TRUNCATE_MODE, "fail")),
-                Arguments.of("keyed.message.batch.mode=deduplication", with(KEYED_MESSAGE_BATCH_MODE, "deduplication")),
+                Arguments.of("buffer.mode=deduplication", with(BUFFER_MODE, "deduplication")),
                 Arguments.of("delete.enabled=false", with(DELETE_ENABLED, "false")),
                 Arguments.of("resource.type=index", with(RESOURCE_TYPE, "index")),
                 Arguments.of("resource.auto.create=false", with(RESOURCE_AUTO_CREATE, "false")),
